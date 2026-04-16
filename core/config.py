@@ -28,7 +28,8 @@ class Config:
     init_b2_max = 3.0
 
     generator_learning_rate = 2e-1
-    forcaster_learning_rate = 2e-1
+    forcaster_learning_rate = 1e-4
+    forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
     training_epochs = 1

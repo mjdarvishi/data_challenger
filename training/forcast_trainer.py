@@ -11,7 +11,7 @@ class ForecastTrainer:
         self.model = model
         self.config = Config()
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.config.forcaster_learning_rate
+            self.model.parameters(), lr=self.config.forcaster_trainer_learning_rate
         )
         self.criterion = nn.MSELoss()
 
@@ -32,12 +32,13 @@ class ForecastTrainer:
         return preds.squeeze(-1)
 
     def fit(self, X_train: torch.Tensor, Y_train: torch.Tensor, epochs: int = None) -> dict[int, float]:
+        self.model.train_mode()
+    
         epochs = epochs or self.config.forcast_trainer_epoch
         X_train = X_train.detach()
         Y_train = Y_train.detach()
 
         losts = {}
-        self.model.train_mode()
 
         for step in range(self.config.forcast_trainer_epoch):
             last_loss = self.train_step(X_train, Y_train)

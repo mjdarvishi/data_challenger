@@ -44,7 +44,10 @@ class ITransformerWrapper(BaseForecastModel):
         config.embed = "timeF"
         config.freq = "h"
         config.use_norm = False
+        self.learning_rate = self.config.forcaster_learning_rate
+        self.epochs = 1
         config.class_strategy = "projection"
+        self.batch_size = self.config.batch_size
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = Model(config).to(self.device)
