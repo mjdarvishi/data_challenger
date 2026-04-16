@@ -6,7 +6,13 @@ from forcast_model.itransformer import ITransformerWrapper
 from data_generator.x_feature_registery import XFeatureRegistery
 from data_generator.generator_model import GeneratorModel
 from core.setup import setup_models
-from visualization.visualizer import plot_ground_truth_vs_prediction, plot_loss, plot_b0_heatmap, print_mse_table,  print_grid_results
+from visualization.visualizer import (
+    plot_ground_truth_vs_prediction,
+    plot_loss,
+    plot_b0_heatmap,
+    print_mse_table,
+    print_grid_results,
+)
 
 
 def main():
@@ -23,8 +29,10 @@ def main():
     )
 
     pipe.run()
-    print_mse_table(pipe.tracker)
-    print_grid_results(tracker=pipe.tracker)
-    plot_ground_truth_vs_prediction(tracker=pipe.tracker)
+    # print_mse_table(pipe.tracker)
+    # print_grid_results(tracker=pipe.tracker)
+    # plot_ground_truth_vs_prediction(tracker=pipe.tracker)
+
+
 if __name__ == "__main__":
     main()

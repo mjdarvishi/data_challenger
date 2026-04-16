@@ -3,23 +3,25 @@ import torch
 
 from core.models import DataPoint, StepRecord
 from data_generator.generator_model import GeneratorModel
+from visualization.step_params_chart import save_step_params_chart
 
 
 class PipelineTracker:
-    def __init__(self):
+    def __init__(self, output_dir: str = "output"):
         self.history: list[StepRecord] = []
         self.grid_search_history = []
+        self.output_dir = output_dir
 
     def log_step(
         self,
         step: int,
-        model_loss: float,
-        generator_loss: float,
+        model_losses: dict[int, float],
+        generator_loss: dict[int, float],
         gen_model: GeneratorModel,
         X_raw: torch.Tensor,
         Y_raw: torch.Tensor,
-      predictions: torch.Tensor =None,
-    targets: torch.Tensor =None,
+        predictions: torch.Tensor = None,
+        targets: torch.Tensor = None,
     ):
         # Extract parameters
         b0 = gen_model.b0.detach().cpu()
@@ -49,7 +51,7 @@ class PipelineTracker:
 
         record = StepRecord(
             step=step,
-            model_loss=model_loss,
+            model_losses=model_losses,
             generator_loss=generator_loss,
             params={
                 "b0": b0.numpy(),
@@ -62,6 +64,7 @@ class PipelineTracker:
         )
 
         self.history.append(record)
+        save_step_params_chart(step=step, params=record.params, output_dir=self.output_dir+ "/params")
 
     def log_grid_search(
         self,

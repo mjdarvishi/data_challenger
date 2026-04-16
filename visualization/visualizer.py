@@ -56,7 +56,7 @@ def print_mse_table(tracker: PipelineTracker, last_n: int | None = None):
         data.append(
             {
                 "step": r.step,
-                "train_mse": r.model_loss,
+                "train_mse": r.model_losses,
                 "test_mse": r.generator_loss,
             }
         )
@@ -78,7 +78,6 @@ def print_grid_results(tracker: PipelineTracker):
 
     print("\nBEST CONFIG:")
     print(df.iloc[0].to_dict())
-    
 
 
 def plot_ground_truth_vs_prediction(tracker, step: int = -1, n: int = 200):

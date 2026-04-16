@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 import torch
+from typing import Optional
 
 
 @dataclass
@@ -17,9 +18,9 @@ class DataPoint:
 @dataclass
 class StepRecord:
     step: int
-    model_loss: float
-    generator_loss: float
+    model_losses: dict[int, float]
+    generator_loss: dict[int, float]
     params: dict
     data: list[DataPoint]
-    predictions: torch.Tensor 
-    targets: torch.Tensor     
+    predictions: Optional[torch.Tensor]
+    targets: torch.Tensor

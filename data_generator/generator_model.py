@@ -15,7 +15,12 @@ class GeneratorModel(nn.Module):
     def forward(self, hour_idx, x1, x2) -> torch.Tensor:
         return self.b0[hour_idx] + self.b1[hour_idx] * x1 + self.b2[hour_idx] * x2
 
-
     def compute_loss(self, X, Y):
-        preds = self.forward(X[:,0], X[:,1], X[:,2])
+        preds = self.forward(X[:, 0], X[:, 1], X[:, 2])
         return torch.nn.functional.mse_loss(preds, Y)
+
+    def clamp_parameters(self):
+        with torch.no_grad():
+            self.b0.copy_(self.b0.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))
+            self.b1.copy_(self.b1.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))
+            self.b2.copy_(self.b2.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))

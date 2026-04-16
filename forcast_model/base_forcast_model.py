@@ -5,36 +5,31 @@ from core.config import Config
 
 
 class BaseForecastModel(ABC):
+    
     @classmethod
     @abstractmethod
-    def search_space(cls):
-        pass
-
-    def fit(self, X_train, Y_train):
-        pass
-
-    @abstractmethod
-    def evaluate(self, X_test, Y_test) -> float:
-        pass
-
-    @abstractmethod
-    def train_step(self, X: torch.Tensor, Y: torch.Tensor, criterion: torch.nn.Module) -> torch.Tensor:
-        pass
+    def search_space(cls)-> dict:
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def forward(self, X: torch.Tensor) -> torch.Tensor:
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def eval_mode(self):
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
     @abstractmethod
     def train_mode(self):
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
 
+    @abstractmethod
     def freeze(self):
-        pass
-
+        raise NotImplementedError("Subclasses must implement this method")
+    @abstractmethod
     def unfreeze(self):
-        pass
+        raise NotImplementedError("Subclasses must implement this method")
+    @property
+    @abstractmethod
+    def parameters(self):
+        raise NotImplementedError("Subclasses must implement this method")

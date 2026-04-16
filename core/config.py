@@ -19,8 +19,7 @@ class Config:
     pred_len: int = 6
     train_ratio: float = 0.8
     batch_size: int = 32
-    
-    
+    noise_dim: int = 16
     init_b0_min = -5.0
     init_b0_max = 5.0
     init_b1_min = -3.0
@@ -29,12 +28,13 @@ class Config:
     init_b2_max = 3.0
 
     generator_learning_rate = 2e-1
+    forcaster_learning_rate = 2e-1
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
-    training_epochs = 10
-    forcast_trainer_epoch = 10
-    generator_epoch = 10
-    grade_search_epochs = 5
+    training_epochs = 1
+    forcast_trainer_epoch = 1
+    generator_epoch = 1
+    grade_search_epochs = 10
 
     total_samples = 8760
     hours_per_day = 24
