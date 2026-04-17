@@ -12,3 +12,5 @@ reformer-pytorch>=1.4.4
 torch
 torchvision
 torchaudio
+flask 
+plotly

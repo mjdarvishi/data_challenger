@@ -146,10 +146,12 @@ class BasePipeline:
         )
         return best_model, best_score
 
-    def _normalize_splitet(
-        self, X_raw: torch.Tensor, Y_raw: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-       
+    def _build_normalize_splitet(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        X_raw, Y_raw = self.dataset_builder.build(
+                    self.x_registery,
+                    self.gen_model,
+                    n_samples=self.config.total_samples,
+                )
         # =========================
         # 2. NORMALIZE
         # =========================
@@ -169,18 +171,12 @@ class BasePipeline:
         X_train, Y_train = X_train.to(self.device), Y_train.to(self.device)
         X_test, Y_test = X_test.to(self.device), Y_test.to(self.device)
 
-        return X_train, Y_train, X_test, Y_test
+        return X_train, Y_train, X_test, Y_test, X_raw, Y_raw
 
     def run_step(self, epoch_num: int):
-        # 1: generate dataset ONCE for grid search
-        X_raw, Y_raw = self.dataset_builder.build(
-            self.x_registery,
-            self.gen_model,
-            n_samples=self.config.total_samples,
-        )
 
         # 2. normalize, sequence build, split
-        X_train, Y_train, X_test, Y_test = self._normalize_splitet(X_raw, Y_raw)
+        X_train, Y_train, X_test, Y_test, X_raw, Y_raw = self._build_normalize_splitet()
         # =========================
         # 1. TRAIN MODEL
         # =========================
@@ -205,13 +201,8 @@ class BasePipeline:
         for step in range(self.config.generator_epoch):
             # We regenerate the dataset inside the loop because the generator changes the data distribution at every update,
             # so the model must always train against the current distribution rather than a fixed snapshot.
-            # X_raw_adv, Y_raw_adv = self.dataset_builder.build(
-            #     self.x_registery,
-            #     self.gen_model,
-            #     n_samples=self.config.total_samples,
-            # )
-            # X_train_adv, Y_train_adv, _, _ = self._normalize_splitet(X_raw_adv, Y_raw_adv)
-            ges_loss=self.gen_trainer.fit(X_train, Y_train, self.forcast_trainer)
+            X_train_adv, Y_train_adv, _, _ ,_,_= self._build_normalize_splitet()
+            ges_loss=self.gen_trainer.fit(X_train_adv, Y_train_adv, self.forcast_trainer)
             generator_loss[step] = ges_loss
         # =========================
         # 8. UNFREEZE MODEL
@@ -228,25 +219,19 @@ class BasePipeline:
             gen_model=self.gen_model,
             X_raw=X_raw.detach().cpu(),
             Y_raw=Y_raw.detach().cpu(),
-            predictions=pred.detach().cpu(),
-            targets=Y_test.detach().cpu(),
+            predictions = pred.detach().cpu().clone() ,
+            targets = Y_test.detach().cpu().clone()
         )
         print(f"Epoch {epoch_num} | Model MSE: {mse:.4f} | model loss: {list(model_losses.values())[0]:.4f} | generator_loss: {list(generator_loss.values())[0]:.4f}")
 
     def run(self):
 
-        # 1: generate dataset ONCE for grid search
-        X_raw, Y_raw = self.dataset_builder.build(
-            self.x_registery,
-            self.gen_model,
-            n_samples=self.config.total_samples,
-        )
-
         # 2. normalize, sequence build, split
-        X_train, Y_train, X_test, Y_test = self._normalize_splitet(X_raw, Y_raw)
+        X_train, Y_train, X_test, Y_test, _ , _ = self._build_normalize_splitet()
         # 5. find best model
         self.select_best_model(X_train, Y_train, X_test, Y_test)
 
         # 6. adversarial training loop
         for epoch in range(self.config.training_epochs):
             self.run_step(epoch)
+    

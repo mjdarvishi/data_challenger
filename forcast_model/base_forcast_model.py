@@ -33,3 +33,8 @@ class BaseForecastModel(ABC):
     @abstractmethod
     def parameters(self):
         raise NotImplementedError("Subclasses must implement this method")
+
+    @property
+    @abstractmethod
+    def named_parameters(self):
+        raise NotImplementedError("Subclasses must implement this method")

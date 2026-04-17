@@ -32,9 +32,9 @@ class Config:
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
-    training_epochs = 1
-    forcast_trainer_epoch = 1
-    generator_epoch = 1
+    training_epochs = 10
+    forcast_trainer_epoch = 10
+    generator_epoch = 10
     grade_search_epochs = 10
 
     total_samples = 8760

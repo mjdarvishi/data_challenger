@@ -1,9 +1,8 @@
+import json
 import pandas as pd
 import torch
-
 from core.models import DataPoint, StepRecord
 from data_generator.generator_model import GeneratorModel
-from visualization.step_params_chart import save_step_params_chart
 
 
 class PipelineTracker:
@@ -24,21 +23,24 @@ class PipelineTracker:
         targets: torch.Tensor = None,
     ):
         # Extract parameters
-        b0 = gen_model.b0.detach().cpu()
-        b1 = gen_model.b1.detach().cpu()
-        b2 = gen_model.b2.detach().cpu()
+        b0 = gen_model.b0.detach().cpu().clone()
+        b1 = gen_model.b1.detach().cpu().clone()
+        b2 = gen_model.b2.detach().cpu().clone()
+        samples_per_step = len(X_raw)
 
         data_points = []
 
         for i in range(len(X_raw)):
+            global_time = step * samples_per_step + i
             hour = i % 168
-
+            
             x1 = float(X_raw[i, 0].item())
             x2 = float(X_raw[i, 1].item())
             y = float(Y_raw[i].item())
 
             data_points.append(
                 DataPoint(
+                    global_time=global_time,
                     hour_of_week=hour,
                     x1=x1,
                     x2=x2,
@@ -64,7 +66,6 @@ class PipelineTracker:
         )
 
         self.history.append(record)
-        save_step_params_chart(step=step, params=record.params, output_dir=self.output_dir+ "/params")
 
     def log_grid_search(
         self,
@@ -83,3 +84,55 @@ class PipelineTracker:
                 "best_score": float(best_score),
             }
         )
+
+    def export(self, path: str = "output/dashboard_data.json"):
+
+        def convert(obj):
+            import numpy as np
+            import torch
+
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+
+            if isinstance(obj, torch.Tensor):
+                return obj.detach().cpu().tolist()
+
+            if isinstance(obj, (np.floating, np.integer)):
+                return obj.item()
+
+            if isinstance(obj, dict):
+                return {k: convert(v) for k, v in obj.items()}
+
+            if isinstance(obj, list):
+                return [convert(x) for x in obj]
+
+            return obj
+
+        data = []
+
+        for record in self.history:
+            data.append({
+                "step": record.step,
+                "model_losses": convert(record.model_losses),
+                "generator_loss": convert(record.generator_loss),
+                "params": convert(record.params),
+                "predictions": convert(record.predictions),
+                "targets": convert(record.targets),
+                "data": [
+                    {
+                        "global_time": d.global_time,
+                        "hour": d.hour_of_week,
+                        "x1": d.x1,
+                        "x2": d.x2,
+                        "y": d.y,
+                        "b0": d.b0_used,
+                        "b1": d.b1_used,
+                        "b2": d.b2_used,
+                    }
+                    for d in record.data
+                ]
+            })
+
+        import json
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)

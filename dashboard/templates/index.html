@@ -1,0 +1,79 @@
+<html>
+<head>
+    <title>Training Dashboard</title>
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            margin: 24px;
+            line-height: 1.4;
+            background: #f6f8fb;
+            color: #1f2937;
+        }
+
+        .panel {
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 14px 16px;
+            margin-bottom: 22px;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+        }
+
+        h1 {
+            margin-bottom: 18px;
+        }
+
+        h2 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 20px;
+        }
+
+        p {
+            margin-top: 0;
+            color: #4b5563;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Adversarial Training Dashboard</h1>
+
+<div class="panel">
+    <h2>1. Exact Parameter Values per Step</h2>
+    <p>Independent line charts, one row per epoch, with exact b0, b1, and b2 values.</p>
+    {{ plot_params_exact | safe }}
+</div>
+
+<div class="panel">
+    <h2>2. Generated Parameters Heatmaps</h2>
+    <p>Separate heatmaps for absolute parameter values and parameter deltas vs previous epoch.</p>
+    {{ plot_params_heat | safe }}
+</div>
+
+<div class="panel">
+    <h2>3. Parameter Delta Lines by Epoch</h2>
+    <p>For each step, b0, b1, and b2 are plotted as differences vs the previous epoch.</p>
+    {{ plot_params_delta | safe }}
+</div>
+
+<div class="panel">
+    <h2>4. Prediction Diagnostics</h2>
+    <p>Line comparison of target and prediction for all forecast steps in the latest epoch.</p>
+    {{ plot_pred | safe }}
+</div>
+
+<div class="panel">
+    <h2>5. X Features</h2>
+    <p>Full-range x1 and x2 shown under each other for the latest epoch.</p>
+    {{ plot_x | safe }}
+</div>
+
+<div class="panel">
+    <h2>6. Generated Y Evolution</h2>
+    <p>Absolute values and epoch-to-epoch deltas as heatmaps.</p>
+    {{ plot_y | safe }}
+</div>
+
+</body>
+</html>

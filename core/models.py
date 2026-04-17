@@ -6,6 +6,7 @@ from typing import Optional
 
 @dataclass
 class DataPoint:
+    global_time: int
     hour_of_week: int
     x1: float
     x2: float

@@ -88,3 +88,5 @@ class ITransformerWrapper(BaseForecastModel):
             
     def parameters(self)-> torch.Tensor:
         return self.model.parameters()
+    def named_parameters(self):
+        return self.model.named_parameters()

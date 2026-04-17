@@ -5,6 +5,7 @@ from core.config import Config
 
 
 class DatasetBuilder:
+    
     def build(
         self, x_registry: XFeatureRegistery, gen_model: GeneratorModel, n_samples: int
     ) -> tuple[torch.Tensor, torch.Tensor]:
