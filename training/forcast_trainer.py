@@ -46,10 +46,11 @@ class ForecastTrainer:
             shuffle=True,
         )
         
-        total_loss = 0
-        count = 0
+
         
         for step in range(epochs):
+            total_loss = 0
+            count = 0
             for x_batch, y_batch in train_loader:
                 x_batch = x_batch.to(X_train.device)
                 y_batch = y_batch.to(Y_train.device)
