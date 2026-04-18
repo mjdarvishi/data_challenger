@@ -5,7 +5,6 @@ from core.setup import import_itransformer_model
 
 from forcast_model.base_forcast_model import BaseForecastModel
 
-Model = import_itransformer_model()
 class ITransformerForcaster(BaseForecastModel):
     def __init__(
         self,

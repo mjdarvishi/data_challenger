@@ -11,7 +11,7 @@ class ForecastTrainer:
         self.model = model
         self.config = Config()
         self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=self.config.forcaster_trainer_learning_rate
+            self.model.parameters, lr=self.config.forcaster_trainer_learning_rate
         )
         self.criterion = nn.MSELoss()
 

@@ -7,6 +7,10 @@ from data_generator import (
     ConstantGenerator,
     ConstantWithNoiseGenerator,
     TemperatureStructuralGenerator,
+    RegimeSwitchGenerator,
+    DelayedDependencyGenerator,
+    MultiplicativeInteractionGenerator,
+    SparseSpikeGenerator
 )
 from data_generator.x_feature_generators import XFeatureGenerator
 from core.config import Config, XFeature
@@ -48,6 +52,20 @@ class XFeatureRegistery:
         self.generator_registry[XFeature.X6] = TemperatureStructuralGenerator(
             name=XFeature.X6.value,
         )
+        self.generator_registry[XFeature.X7] = RegimeSwitchGenerator(
+            name=XFeature.X7.value,
+        )
+        self.generator_registry[XFeature.X8] = DelayedDependencyGenerator(
+            name=XFeature.X8.value,
+        )
+        self.generator_registry[XFeature.X9] = MultiplicativeInteractionGenerator(
+            name=XFeature.X9.value,
+        )
+        self.generator_registry[XFeature.X10] = SparseSpikeGenerator(
+            name=XFeature.X10.value,
+        )
+        
+        
 
     def get_features(self, t: int) -> tuple[float, float]:
         if not self.selected_generators:

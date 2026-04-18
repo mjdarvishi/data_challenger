@@ -5,6 +5,12 @@ from .x_feature_generators import (
     ConstantWithNoiseGenerator,
     TemperatureStructuralGenerator,
     YearlyWeeklySineNoiseGenerator,
+    RegimeSwitchGenerator,
+    DelayedDependencyGenerator,
+    MultiplicativeInteractionGenerator,
+    SparseSpikeGenerator,
+    
+    
 )
 
 __all__ = [
@@ -14,4 +20,8 @@ __all__ = [
     "ConstantWithNoiseGenerator",
     "TemperatureStructuralGenerator",
     "YearlyWeeklySineNoiseGenerator",
+    "RegimeSwitchGenerator",
+    "DelayedDependencyGenerator",
+    "MultiplicativeInteractionGenerator",
+    "SparseSpikeGenerator",
 ]

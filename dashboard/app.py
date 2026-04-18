@@ -22,10 +22,10 @@ def _load_data(path: str = "output/dashboard_data.json"):
         with open(path, "r") as f:
             payload = json.load(f)
             if isinstance(payload, dict):
-                return payload.get("records", []), payload.get("meta", {}), payload.get("grid_search_history", [])
-            return payload, {}, []
+                return payload.get("records", []), payload.get("meta", {}), payload.get("grid_search_history", []), payload.get("config", {})
+            return payload, {}, [], {}
     except FileNotFoundError:
-        return [], {}, []
+        return [], {}, [], {}
 
 
 def _list_output_sources(output_dir: str = "output"):
@@ -106,46 +106,17 @@ def _html_table(df: pd.DataFrame, empty_message: str):
     return df.to_html(index=False, classes="dashboard-table", border=0, escape=True)
 
 
-def _load_config_values():
-    try:
-        from core.config import Config
-    except Exception:
-        return {}
-
-    values = {}
-    for key, raw_value in Config.__dict__.items():
-        if key.startswith("_"):
-            continue
-        if isinstance(raw_value, (staticmethod, classmethod)):
-            continue
-
-        value = getattr(Config, key, raw_value)
-        if callable(value):
-            continue
-
-        if isinstance(value, (int, float, str, bool)) or value is None:
-            values[key] = value
-        else:
-            values[key] = str(value)
-
-    for derived_name in ("total_samples", "hours_per_week"):
-        derived_fn = getattr(Config, derived_name, None)
-        if callable(derived_fn):
-            try:
-                values[derived_name] = derived_fn()
-            except Exception:
-                pass
-
-    return values
-
-
-def _build_config_table():
-    config_values = _load_config_values()
-    if not config_values:
+def _build_config_table(config_dict):
+    """
+    Build an HTML table from the config dictionary loaded from JSON.
+    Displays config as vertical rows (Key | Value) instead of horizontal columns.
+    """
+    if not config_dict:
         return '<div class="empty-state">No config values found.</div>'
 
-    display_values = {key: _format_scalar(value) for key, value in config_values.items()}
-    return _html_table(pd.DataFrame([display_values]), "No config values found.")
+    rows = [{"Key": key, "Value": _format_scalar(value)} for key, value in sorted(config_dict.items())]
+    df = pd.DataFrame(rows)
+    return _html_table(df, "No config values found.")
 
 
 def _feature_series(step, key):
@@ -265,7 +236,6 @@ def _build_epoch_summary_table_and_chart(data, meta):
                 "Total time (s)": float(step_data.get("execution_time", 0.0)),
                 "Forecast time (s)": float(step_data.get("forecast_time", 0.0)),
                 "Generator time (s)": float(step_data.get("generator_time", 0.0)),
-                "Model MSE": mse,
                 "Model loss": _safe_mean(model_losses),
                 "Generator loss": _safe_mean(generator_losses),
             }
@@ -280,7 +250,7 @@ def _build_epoch_summary_table_and_chart(data, meta):
     display_df = df.copy()
     for column in ["Total time (s)", "Forecast time (s)", "Generator time (s)"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.2f}s")
-    for column in ["Model MSE", "Model loss", "Generator loss"]:
+    for column in ["Model loss", "Generator loss"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.4f}")
 
     fig = make_subplots(
@@ -295,7 +265,6 @@ def _build_epoch_summary_table_and_chart(data, meta):
     fig.add_trace(go.Scatter(x=epochs, y=df["Total time (s)"], mode="lines+markers", name="total"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Forecast time (s)"], mode="lines+markers", name="forecast"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Generator time (s)"], mode="lines+markers", name="generator"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=epochs, y=df["Model MSE"], mode="lines+markers", name="model mse"), row=2, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Model loss"], mode="lines+markers", name="model loss"), row=2, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Generator loss"], mode="lines+markers", name="generator loss"), row=2, col=1)
 
@@ -938,8 +907,8 @@ def index():
     requested_source = request.args.get("source", "")
     active_source = _resolve_selected_source(available_sources, requested_source)
     data_path = os.path.join("output", active_source)
-    data, meta, grid_search_history = _load_data(data_path)
-    config_table = _build_config_table()
+    data, meta, grid_search_history, config_dict = _load_data(data_path)
+    config_table = _build_config_table(config_dict)
 
     if not data:
         empty = go.Figure()

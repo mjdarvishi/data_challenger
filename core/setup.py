@@ -1,49 +1,113 @@
 import os
 import random
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 import importlib
 import numpy as np
-import torch
-import random
+
+# =========================================================
+# PATH MANAGEMENT
+# =========================================================
+
+MODEL_REPOS_DIRNAME = "external_models"
 
 
-def _ensure_model_repo_paths(base_dir="/content"):
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
+def _default_base_dir() -> Path:
+    # Keep cloned model repos under a dedicated project directory.
+    return _project_root() / MODEL_REPOS_DIRNAME
+
+
+def _resolve_repo_dir(base_path: Path, repo_name: str) -> Path:
+    preferred = base_path / repo_name
+    legacy = _project_root() / repo_name
+
+    if preferred.exists():
+        return preferred
+    if legacy.exists():
+        return legacy
+    return preferred
+
+
+def _migrate_repo_if_needed(base_path: Path, repo_name: str) -> Path:
+    target = base_path / repo_name
+    legacy = _project_root() / repo_name
+
+    if target.exists():
+        return target
+
+    if legacy.exists() and legacy != target:
+        print(f"-> moving {repo_name} into {base_path}")
+        shutil.move(str(legacy), str(target))
+
+    return target
+
+def _ensure_model_repo_paths(base_dir=None):
+    if base_dir is None:
+        base_dir = _default_base_dir()
     base_path = Path(base_dir)
-    itransformer_dir = base_path / "iTransformer"
-    samformer_dir = base_path / "samformer"
 
-    # Keep iTransformer paths before samformer to avoid picking the wrong top-level "utils" package.
+    itransformer_dir = _resolve_repo_dir(base_path, "iTransformer")
+    autoformer_dir = _resolve_repo_dir(base_path, "Autoformer")
+
+    legacy_itransformer_dir = _project_root() / "iTransformer"
+    legacy_autoformer_dir = _project_root() / "Autoformer"
+
     preferred_paths = [
         itransformer_dir,
         itransformer_dir / "iTransformer",
-        samformer_dir,
+        autoformer_dir,
+        legacy_itransformer_dir,
+        legacy_itransformer_dir / "iTransformer",
+        legacy_autoformer_dir,
     ]
 
+    # remove duplicates from sys.path
     for repo_path in preferred_paths:
         repo_str = str(repo_path)
         while repo_str in sys.path:
             sys.path.remove(repo_str)
 
-    # Insert in reverse so final order matches preferred_paths.
+    # insert correctly
     for repo_path in reversed(preferred_paths):
         if repo_path.exists():
             sys.path.insert(0, str(repo_path))
 
-    return itransformer_dir, samformer_dir
+    return itransformer_dir, autoformer_dir
 
 
-def _pip_install(package_spec: str):
-    print("-> Installing missing dependency:", package_spec)
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", package_spec],
-        check=True,
-    )
+def _run_cmd(cmd):
+    print("->", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
+def _prioritize_repo_path(repo_dir: Path):
+    repo_str = str(repo_dir)
+    while repo_str in sys.path:
+        sys.path.remove(repo_str)
+    if repo_dir.exists():
+        sys.path.insert(0, repo_str)
+
+
+def _purge_conflicting_package_cache(repo_dir: Path, package_prefixes: tuple[str, ...]):
+    repo_dir_str = str(repo_dir)
+    for mod_name, mod in list(sys.modules.items()):
+        if not any(
+            mod_name == prefix or mod_name.startswith(prefix + ".")
+            for prefix in package_prefixes
+        ):
+            continue
+
+        mod_file = str(getattr(mod, "__file__", "") or "")
+        if mod_file and repo_dir_str not in mod_file:
+            del sys.modules[mod_name]
 
 
 def _purge_conflicting_utils_cache(itransformer_dir: Path):
-    # A third-party module named "utils" can get cached and break iTransformer imports.
     for name in ["utils", "utils.masking"]:
         mod = sys.modules.get(name)
         if mod is None:
@@ -53,221 +117,173 @@ def _purge_conflicting_utils_cache(itransformer_dir: Path):
             del sys.modules[name]
 
 
+# =========================================================
+# MODEL IMPORTS
+# =========================================================
+
 def import_itransformer_model():
     itransformer_dir, _ = _ensure_model_repo_paths()
+    _prioritize_repo_path(itransformer_dir)
+    _purge_conflicting_package_cache(itransformer_dir, ("layers", "utils", "model"))
     _purge_conflicting_utils_cache(itransformer_dir)
     importlib.invalidate_caches()
 
     try:
-        from model.iTransformer import Model
-
-        return Model
-    except ModuleNotFoundError as exc:
-        # iTransformer depends on reformer_pytorch via `reformer-pytorch` package.
-        if exc.name == "reformer_pytorch":
-            _pip_install("reformer-pytorch>=1.4.4")
-            importlib.invalidate_caches()
-            from model.iTransformer import Model
-
-            return Model
-
-        raise ImportError(
-            "iTransformer import failed. Missing module: " + str(exc.name)
-        ) from exc
+        module = importlib.import_module("model.iTransformer")
+        return module.Model
+    except Exception as exc:
+        raise ImportError("iTransformer import failed") from exc
 
 
-def import_samformer_class():
-    # Import path can vary by install mode and package layout.
-    candidates = [
-        "samformer_pytorch.samformer.samformer",
-        "samformer.samformer.samformer",
-        "samformer.samformer",
-    ]
-
-    _ensure_model_repo_paths()
+def import_autoformer_model():
+    _, autoformer_dir = _ensure_model_repo_paths()
+    _prioritize_repo_path(autoformer_dir)
+    _purge_conflicting_package_cache(autoformer_dir, ("layers", "utils", "models", "model"))
     importlib.invalidate_caches()
 
-    for module_name in candidates:
+    for module_name in ("model.Autoformer", "models.Autoformer"):
         try:
             module = importlib.import_module(module_name)
-            if hasattr(module, "SAMFormer"):
-                return module.SAMFormer
+            return module.Model
         except Exception:
             continue
 
     raise ImportError(
-        "SAMFormer import failed. Re-run Cell 2 (Setup), then retry this cell."
+        f"Autoformer import failed. Expected model/Autoformer.py or models/Autoformer.py under {autoformer_dir}."
     )
 
 
-def _run_cmd(cmd):
-    print("->", " ".join(cmd))
-    subprocess.run(cmd, check=True)
+# =========================================================
+# MAIN SETUP
+# =========================================================
 
-
-def _restart_kernel_if_available(reason):
-    print("->", reason)
-    try:
-        from IPython.display import display, Markdown
-
-        display(Markdown("**Restarting kernel to finalize binary package changes...**"))
-        get_ipython().kernel.do_shutdown(restart=True)
-        return True
-    except Exception:
-        print(
-            "X Could not auto-restart kernel. Please restart runtime manually and re-run from Cell 2."
-        )
-        return False
-
-
-def _repair_scientific_stack():
-    # Force reinstall to clear any ABI-mismatched wheels left in the environment.
-    _run_cmd(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--force-reinstall",
-            "--no-cache-dir",
-            "numpy==1.26.4",
-            "pandas==2.2.2",
-            "scipy==1.13.1",
-            "scikit-learn==1.5.0",
-        ]
-    )
-
-
-def setup_models(base_dir="/content", seed=42):
+def setup_models(base_dir=None, seed=42):
     """
-    Unified setup for iTransformer and SAMFormer in a single Colab env.
-    Designed for Python 3.12-compatible package versions.
+    Clean setup for:
+    - iTransformer
+    - Autoformer
+
+    SAMFormer REMOVED (not compatible with adversarial training)
     """
-    SEED = 42
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
+    import torch
+
+    # -------------------------
+    # reproducibility
+    # -------------------------
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Using device:", device)
 
+    if base_dir is None:
+        base_dir = _default_base_dir()
     base_path = Path(base_dir)
     base_path.mkdir(parents=True, exist_ok=True)
 
-    # 1) Core tooling
-    _run_cmd(
-        [sys.executable, "-m", "pip", "install", "-U", "pip", "setuptools", "wheel"]
-    )
+    # -------------------------
+    # 1. Core tooling
+    # -------------------------
+    _run_cmd([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "-U",
+        "pip",
+        "setuptools",
+        "wheel"
+    ])
 
-    # 2) Python 3.12-safe scientific + DL stack
-    _run_cmd(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "numpy==1.26.4",
-            "pandas==2.2.2",
-            "scipy==1.13.1",
-            "scikit-learn==1.5.0",
-            "matplotlib>=3.8.0",
-            "seaborn>=0.13.0",
-            "einops>=0.8.0",
-            "tqdm>=4.66.0",
-            "optuna>=3.6.0",
-            "pytorch-lightning>=2.2.0",
-            "reformer-pytorch>=1.4.4",
-        ]
-    )
+    # -------------------------
+    # 2. Scientific stack
+    # -------------------------
+    _run_cmd([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "numpy==1.26.4",
+        "pandas==2.2.2",
+        "scipy==1.13.1",
+        "scikit-learn==1.5.0",
+        "matplotlib>=3.8.0",
+        "seaborn>=0.13.0",
+        "einops>=0.8.0",
+        "tqdm>=4.66.0",
+        "optuna>=3.6.0",
+        "pytorch-lightning>=2.2.0",
+    ])
 
-    # 3) PyTorch (CUDA 12.1 wheels; works in Colab GPU runtime)
-    _run_cmd(
-        [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "torch",
-            "torchvision",
-            "torchaudio",
-            "--index-url",
-            "https://download.pytorch.org/whl/cu121",
-        ]
-    )
+    # -------------------------
+    # 3. PyTorch (CUDA 12.1)
+    # -------------------------
+    _run_cmd([
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "torch",
+        "torchvision",
+        "torchaudio",
+        "--index-url",
+        "https://download.pytorch.org/whl/cu121",
+    ])
 
-    # 4) Clone repos if needed
-    itransformer_dir = base_path / "iTransformer"
-    samformer_dir = base_path / "samformer"
+    # -------------------------
+    # 4. Clone iTransformer
+    # -------------------------
+    itransformer_dir = _migrate_repo_if_needed(base_path, "iTransformer")
 
     if not itransformer_dir.exists():
-        _run_cmd(
-            [
-                "git",
-                "clone",
-                "https://github.com/thuml/iTransformer.git",
-                str(itransformer_dir),
-            ]
-        )
+        _run_cmd([
+            "git",
+            "clone",
+            "https://github.com/thuml/iTransformer.git",
+            str(itransformer_dir),
+        ])
     else:
-        print("-> iTransformer already present, skipping clone")
+        print("-> iTransformer already exists")
 
-    if not samformer_dir.exists():
-        _run_cmd(
-            [
-                "git",
-                "clone",
-                "https://github.com/romilbert/samformer.git",
-                str(samformer_dir),
-            ]
-        )
+    # -------------------------
+    # 5. Clone Autoformer
+    # -------------------------
+    autoformer_dir = _migrate_repo_if_needed(base_path, "Autoformer")
+
+    if not autoformer_dir.exists():
+        _run_cmd([
+            "git",
+            "clone",
+            "https://github.com/thuml/Autoformer.git",
+            str(autoformer_dir),
+        ])
     else:
-        print("-> samformer already present, skipping clone")
+        print("-> Autoformer already exists")
 
-    # 5) Install SAMFormer package without forcing its old pinned deps.
-    # Try editable first; if it fails, try non-editable local install.
-    install_samformer_ok = False
-    install_attempts = [
-        [sys.executable, "-m", "pip", "install", "-e", str(samformer_dir), "--no-deps"],
-        [sys.executable, "-m", "pip", "install", str(samformer_dir), "--no-deps"],
-    ]
+    # -------------------------
+    # 6. sys.path setup
+    # -------------------------
+    for repo_path in [itransformer_dir, autoformer_dir]:
+        repo_str = str(repo_path)
+        if repo_str not in sys.path:
+            sys.path.insert(0, repo_str)
 
-    for attempt in install_attempts:
-        try:
-            _run_cmd(attempt)
-            install_samformer_ok = True
-            break
-        except subprocess.CalledProcessError as exc:
-            print("X SAMFormer install attempt failed with return code", exc.returncode)
-
-    if not install_samformer_ok:
-        print("X SAMFormer installation failed; continuing with repo-on-sys.path mode.")
-        print("-> Imports may still work directly from the cloned repository.")
-
-    # 6) Add repos to import path for notebook runtime
-    for repo_path in [str(itransformer_dir), str(samformer_dir)]:
-        if repo_path not in sys.path:
-            sys.path.insert(0, repo_path)
-
-    # 7) Reproducibility + runtime info with ABI smoke test
+    # -------------------------
+    # 7. sanity imports
+    # -------------------------
     try:
-        import pandas as pd
-        import scipy
+        import numpy
+        import pandas
         import sklearn
+        import torch
     except Exception as exc:
-        print("X Scientific stack import failed:", repr(exc))
-        print("-> Attempting forced reinstall of binary scientific packages.")
-        _repair_scientific_stack()
-        _restart_kernel_if_available(
-            "Binary packages were reinstalled after an ABI mismatch."
-        )
-        return
+        print("X environment import failed:", exc)
+        raise
 
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-
+    # -------------------------
+    # 8. device info
+    # -------------------------
     print("GPU Available:", torch.cuda.is_available())
     if torch.cuda.is_available():
         print("GPU Name:", torch.cuda.get_device_name(0))

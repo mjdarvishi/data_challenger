@@ -1,17 +1,17 @@
 import json
 import pandas as pd
+from core.config import Config
 import torch
 from core.models import DataPoint, StepRecord
 from data_generator.generator_model import GeneratorModel
 
 
 class PipelineTracker:
-    def __init__(self, output_dir: str = "output"):
+    def __init__(self):
         self.history: list[StepRecord] = []
         self.grid_search_history = []
-        self.output_dir = output_dir
+        self.output_dir = "./output"
         self.meta = {}
-
     def log_step(
         self,
         step: int,
@@ -108,8 +108,8 @@ class PipelineTracker:
             }
         )
 
-    def export(self, path: str = "output/dashboard_data.json"):
-
+    def export(self, name: str = "dashboard_data.json"):
+        path = f"{self.output_dir}/{name}.json"
         def convert(obj):
             import numpy as np
             import torch
@@ -166,6 +166,7 @@ class PipelineTracker:
             "meta": convert(self.meta),
             "records": data,
             "grid_search_history": convert(self.grid_search_history),
+            "config": Config.to_dict(),
         }
 
         import json

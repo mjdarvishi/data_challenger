@@ -238,7 +238,7 @@ class BasePipeline:
         print(
             f"Epoch {epoch_num} | total: {perf_counter() - step_start:.2f}s | "
             f"forecast: {forecast_time:.2f}s | generator: {generator_time:.2f}s | "
-            f"Model MSE: {mse:.4f} | model loss: {list(model_losses.values())[0]:.4f} | "
+            f"Model MSE: {mse:.4f} "
             f"generator_loss: {list(generator_loss.values())[0]:.4f}"
         )
 
