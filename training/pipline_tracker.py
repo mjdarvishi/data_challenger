@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 import pandas as pd
 from core.config import Config
 import torch
@@ -10,7 +12,8 @@ class PipelineTracker:
     def __init__(self):
         self.history: list[StepRecord] = []
         self.grid_search_history = []
-        self.output_dir = "./output"
+        self.output_dir = self.get_output_dir()
+
         self.meta = {}
     def log_step(
         self,
@@ -172,3 +175,16 @@ class PipelineTracker:
         import json
         with open(path, "w") as f:
             json.dump(payload, f, indent=2)
+            
+                
+    def get_output_dir(self):
+        # 1. detect running environment safely
+        if "COLAB_GPU" in os.environ:
+            base = Path("/content/data_challenger")
+        else:
+            base = Path(__file__).resolve().parent.parent
+
+        output_dir = base / "output"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        return output_dir
