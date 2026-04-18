@@ -36,7 +36,7 @@ class YearlySineGenerator(XFeatureGenerator):
 
     def __init__(self, name: str = "X1"):
         super().__init__(name)
-        self.period = Config.total_samples
+        self.period = Config.total_samples()
 
     def generate(self, t: int) -> float:
         return np.sin(2 * np.pi * t / self.period)
@@ -98,8 +98,8 @@ class YearlyWeeklySineNoiseGenerator(XFeatureGenerator):
 
     def __init__(self, name: str = "X3", noise_std: float = 0.05):
         super().__init__(name)
-        self.yearly_period = Config.total_samples
-        self.weekly_period = Config.hours_per_week
+        self.yearly_period = Config.total_samples()
+        self.weekly_period = Config.hours_per_week()
         self.noise_std = noise_std
 
     def generate(self, t: int) -> float:
@@ -175,7 +175,7 @@ class TemperatureSeasonalGenerator(XFeatureGenerator):
         noise_std: float = 0.5,
     ):
         super().__init__(name)
-        self.yearly_period = Config.total_samples
+        self.yearly_period = Config.total_samples()
         self.daily_period = Config.hours_per_day
         self.yearly_amp = yearly_amp
         self.daily_amp = daily_amp
@@ -251,7 +251,7 @@ class TemperatureStructuralGenerator(XFeatureGenerator):
     ):
         super().__init__(name)
 
-        self.yearly_period = Config.total_samples
+        self.yearly_period = Config.total_samples()
         self.daily_period = Config.hours_per_day
         self.yearly_amp = yearly_amp
         self.daily_amp = daily_amp

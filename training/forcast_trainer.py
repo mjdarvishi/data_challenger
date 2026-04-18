@@ -33,16 +33,31 @@ class ForecastTrainer:
 
     def fit(self, X_train: torch.Tensor, Y_train: torch.Tensor, epochs: int = None) -> dict[int, float]:
         self.model.train_mode()
-    
+
         epochs = epochs or self.config.forcast_trainer_epoch
         X_train = X_train.detach()
         Y_train = Y_train.detach()
 
         losts = {}
 
-        for step in range(self.config.forcast_trainer_epoch):
-            last_loss = self.train_step(X_train, Y_train)
-            losts[step] = float(last_loss.item())
+        train_loader = DataLoader(
+            list(zip(X_train, Y_train)),
+            batch_size=self.config.batch_size,
+            shuffle=True,
+        )
+        
+        total_loss = 0
+        count = 0
+        
+        for step in range(epochs):
+            for x_batch, y_batch in train_loader:
+                x_batch = x_batch.to(X_train.device)
+                y_batch = y_batch.to(Y_train.device)
+                loss  = self.train_step(x_batch, y_batch)
+                total_loss += loss.item()
+                count += 1
+
+            losts[step] = total_loss / count
 
         return losts
 
@@ -61,3 +76,20 @@ class ForecastTrainer:
             mse = self.criterion(preds, target).item()
 
         return preds, mse
+    
+    
+    
+# def fit(self, X_train: torch.Tensor, Y_train: torch.Tensor, epochs: int = None) -> dict[int, float]:
+#         self.model.train_mode()
+    
+#         epochs = epochs or self.config.forcast_trainer_epoch
+#         X_train = X_train.detach()
+#         Y_train = Y_train.detach()
+
+#         losts = {}
+
+#         for step in range(self.config.forcast_trainer_epoch):
+#             last_loss = self.train_step(X_train, Y_train)
+#             losts[step] = float(last_loss.item())
+
+#         return losts

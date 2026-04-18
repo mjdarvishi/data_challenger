@@ -28,7 +28,7 @@ class GeneratorModel(nn.Module):
             self.b2.copy_(self.b2.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))
 
     def create_initial_b_params(self):
-            b0 = np.random.uniform(self.config.init_b0_min, self.config.init_b0_max, self.config.hours_per_week)
-            b1 = np.random.uniform(self.config.init_b1_min, self.config.init_b1_max, self.config.hours_per_week)
-            b2 = np.random.uniform(self.config.init_b2_min, self.config.init_b2_max, self.config.hours_per_week)
+            b0 = np.random.uniform(self.config.init_b0_min, self.config.init_b0_max, self.config.hours_per_week())
+            b1 = np.random.uniform(self.config.init_b1_min, self.config.init_b1_max, self.config.hours_per_week())
+            b2 = np.random.uniform(self.config.init_b2_min, self.config.init_b2_max, self.config.hours_per_week())
             return b0, b1, b2

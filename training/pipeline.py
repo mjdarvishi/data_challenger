@@ -98,6 +98,7 @@ from core.config import Config
 import torch
 from forcast_model.grid_search import GridSearchEngine
 from training.pipline_tracker import PipelineTracker
+from time import perf_counter
 
 
 class BasePipeline:
@@ -150,12 +151,16 @@ class BasePipeline:
         X_raw, Y_raw = self.dataset_builder.build(
                     self.x_registery,
                     self.gen_model,
-                    n_samples=self.config.total_samples,
+                    n_samples=self.config.total_samples(),
                 )
         # =========================
         # 2. NORMALIZE
         # =========================
         self.normalizer.fit(X_raw, Y_raw)
+        self.tracker.meta = {
+            "Y_mean": float(self.normalizer.Y_mean.item()),
+            "Y_std": float(self.normalizer.Y_std.item()),
+        }
         X, Y = self.normalizer.transform(X_raw, Y_raw)
 
         # =========================
@@ -174,6 +179,7 @@ class BasePipeline:
         return X_train, Y_train, X_test, Y_test, X_raw, Y_raw
 
     def run_step(self, epoch_num: int):
+        step_start = perf_counter()
 
         # 2. normalize, sequence build, split
         X_train, Y_train, X_test, Y_test, X_raw, Y_raw = self._build_normalize_splitet()
@@ -182,6 +188,7 @@ class BasePipeline:
         # =========================
         # Detach Y to prevent gradient flow into generator during model training.
         # Ensures only the forecast model (θ) is updated in this step.
+        forecast_start = perf_counter()
         model_losses = self.forcast_trainer.fit(X_train,  Y_train.detach())
         self.forcast_trainer.model.eval_mode()
 
@@ -189,6 +196,7 @@ class BasePipeline:
         # 9. EVALUATION
         # =========================
         pred, mse = self.forcast_trainer.evaluate_pred_mse(X_test, Y_test)
+        forecast_time = perf_counter() - forecast_start
         # =========================
         # 6. FREEZE MODEL
         # =========================
@@ -198,12 +206,14 @@ class BasePipeline:
         # 7. TRAIN GENERATOR (ADVERSARIAL LOOP)
         # =====================================================
         generator_loss = {}
+        generator_start = perf_counter()
         for step in range(self.config.generator_epoch):
             # We regenerate the dataset inside the loop because the generator changes the data distribution at every update,
             # so the model must always train against the current distribution rather than a fixed snapshot.
             X_train_adv, Y_train_adv, _, _ ,_,_= self._build_normalize_splitet()
             ges_loss=self.gen_trainer.fit(X_train_adv, Y_train_adv, self.forcast_trainer)
             generator_loss[step] = ges_loss
+        generator_time = perf_counter() - generator_start
         # =========================
         # 8. UNFREEZE MODEL
         # =========================
@@ -214,6 +224,9 @@ class BasePipeline:
         # =========================
         self.tracker.log_step(
             step=epoch_num,
+            execution_time=perf_counter() - step_start,
+            forecast_time=forecast_time,
+            generator_time=generator_time,
             model_losses=model_losses,
             generator_loss=generator_loss,
             gen_model=self.gen_model,
@@ -222,7 +235,12 @@ class BasePipeline:
             predictions = pred.detach().cpu().clone() ,
             targets = Y_test.detach().cpu().clone()
         )
-        print(f"Epoch {epoch_num} | Model MSE: {mse:.4f} | model loss: {list(model_losses.values())[0]:.4f} | generator_loss: {list(generator_loss.values())[0]:.4f}")
+        print(
+            f"Epoch {epoch_num} | total: {perf_counter() - step_start:.2f}s | "
+            f"forecast: {forecast_time:.2f}s | generator: {generator_time:.2f}s | "
+            f"Model MSE: {mse:.4f} | model loss: {list(model_losses.values())[0]:.4f} | "
+            f"generator_loss: {list(generator_loss.values())[0]:.4f}"
+        )
 
     def run(self):
 

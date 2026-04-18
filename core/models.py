@@ -19,6 +19,9 @@ class DataPoint:
 @dataclass
 class StepRecord:
     step: int
+    execution_time: float
+    forecast_time: float
+    generator_time: float
     model_losses: dict[int, float]
     generator_loss: dict[int, float]
     params: dict

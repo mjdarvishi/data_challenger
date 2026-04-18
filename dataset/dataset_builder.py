@@ -18,12 +18,26 @@ class DatasetBuilder:
 
         x1, x2 = x_features
 
+        hours_per_week = Config().hours_per_week()
+
         for i in range(n_samples):
-            hour_idx = i % 168
+            hour_idx = i % hours_per_week
 
             y = gen_model(hour_idx, x1[i], x2[i])
 
-            X_list.append(torch.stack([x1[i], x2[i]]))
+            # Keep the same 6-channel layout used in the original adversarial pipeline.
+            X_list.append(
+                torch.stack(
+                    [
+                        torch.tensor(float(hour_idx), dtype=torch.float32),
+                        x1[i],
+                        x2[i],
+                        gen_model.b0[hour_idx],
+                        gen_model.b1[hour_idx],
+                        gen_model.b2[hour_idx],
+                    ]
+                )
+            )
             Y_list.append(y)
 
         X = torch.stack(X_list)

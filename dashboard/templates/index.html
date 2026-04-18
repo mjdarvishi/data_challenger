@@ -10,6 +10,125 @@
             color: #1f2937;
         }
 
+        .layout {
+            display: flex;
+            gap: 18px;
+            align-items: flex-start;
+        }
+
+        .content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .sidebar {
+            width: 260px;
+            flex: 0 0 260px;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+            padding: 14px;
+            position: sticky;
+            top: 24px;
+            max-height: calc(100vh - 48px);
+            overflow: auto;
+        }
+
+        .sidebar.hidden {
+            display: none;
+        }
+
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .sidebar-title {
+            margin: 0;
+            font-size: 16px;
+            color: #111827;
+        }
+
+        .sidebar-close {
+            border: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #111827;
+            border-radius: 8px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .sidebar-close:hover {
+            background: #f3f4f6;
+        }
+
+        .source-current {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #4b5563;
+        }
+
+        .source-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .source-link {
+            display: block;
+            text-decoration: none;
+            color: #1f2937;
+            border: 1px solid #e5e7eb;
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            word-break: break-all;
+        }
+
+        .source-link:hover {
+            background: #eff6ff;
+            border-color: #bfdbfe;
+            color: #1d4ed8;
+        }
+
+        .source-link.active {
+            background: #dbeafe;
+            border-color: #93c5fd;
+            color: #1e3a8a;
+            font-weight: 600;
+        }
+
+        .sidebar-reopen {
+            border: 1px solid #d1d5db;
+            background: #ffffff;
+            color: #111827;
+            border-radius: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            position: fixed;
+            top: 24px;
+            left: 24px;
+            z-index: 20;
+            box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+        }
+
+        .sidebar-reopen:hover {
+            background: #f3f4f6;
+        }
+
+        .sidebar-reopen.hidden {
+            display: none;
+        }
+
         .panel {
             background: #ffffff;
             border: 1px solid #e5e7eb;
@@ -33,46 +152,306 @@
             margin-top: 0;
             color: #4b5563;
         }
+
+        .summary-line {
+            margin-bottom: 12px;
+            padding: 10px 12px;
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            color: #111827;
+        }
+
+        .dashboard-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+            background: #fff;
+            margin-top: 10px;
+        }
+
+        .dashboard-table thead th {
+            background: #eef2ff;
+            color: #111827;
+            text-align: left;
+            padding: 10px 12px;
+            border-bottom: 1px solid #dbe2f0;
+        }
+
+        .dashboard-table tbody td {
+            padding: 9px 12px;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+
+        .dashboard-table tbody tr:nth-child(even) {
+            background: #fafafa;
+        }
+
+        .dashboard-table tbody tr:hover {
+            background: #f3f4f6;
+        }
+
+        .empty-state {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            color: #6b7280;
+            background: #f8fafc;
+        }
+
+        .filter-panel {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: #ffffff;
+        }
+
+        .filter-title {
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #111827;
+        }
+
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 999px;
+            font-size: 13px;
+            background: #f9fafb;
+            color: #374151;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .filter-chip input {
+            margin: 0;
+            accent-color: #1d4ed8;
+        }
+
+        .tag-list {
+            margin-top: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag {
+            font-size: 12px;
+            color: #1e40af;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 999px;
+            padding: 2px 8px;
+        }
+
+        .hidden-by-filter {
+            display: none;
+        }
+
+        .filter-summary {
+            color: #4b5563;
+            font-size: 13px;
+        }
+
+        @media (max-width: 1024px) {
+            .layout {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                max-height: 320px;
+                position: static;
+            }
+        }
     </style>
 </head>
 <body>
 
-<h1>Adversarial Training Dashboard</h1>
+<button class="sidebar-reopen hidden" id="sidebar-reopen" type="button">Open Sources</button>
+
+<div class="layout">
+<aside class="sidebar" id="source-sidebar">
+    <div class="sidebar-header">
+        <h2 class="sidebar-title">Data Sources</h2>
+        <button class="sidebar-close" id="sidebar-close" type="button">Close</button>
+    </div>
+    <p class="source-current">Current: {{ active_source }}</p>
+    <ul class="source-list">
+        {% if available_sources %}
+            {% for source_name in available_sources %}
+            <li>
+                <a class="source-link{% if source_name == active_source %} active{% endif %}" href="{{ url_for('index', source=source_name) }}">{{ source_name }}</a>
+            </li>
+            {% endfor %}
+        {% else %}
+            <li><div class="empty-state">No JSON sources found in output/</div></li>
+        {% endif %}
+    </ul>
+</aside>
+
+<main class="content">
+
+<h1>Dashboard</h1>
+
+
+
+<div class="panel filter-panel">
+    <div class="filter-title">Filter by hashtag</div>
+    <div class="filter-controls" id="filter-controls">
+        <label class="filter-chip"><input type="checkbox" value="grid_search">#grid_search</label>
+        <label class="filter-chip"><input type="checkbox" value="per_step">#per_step</label>
+        <label class="filter-chip"><input type="checkbox" value="params">#params</label>
+        <label class="filter-chip"><input type="checkbox" value="result">#result</label>
+        <label class="filter-chip"><input type="checkbox" value="X_feature">#X_feature</label>
+        <label class="filter-chip"><input type="checkbox" value="Y_generated">#Y_generated</label>
+    </div>
+    <div class="filter-summary" id="filter-summary">Showing all sections.</div>
+</div>
 
 <div class="panel">
+    <h2>Config Values</h2>
+    <p>Current runtime configuration loaded from core/config.py.</p>
+    {{ config_table | safe }}
+</div>
+
+
+<div class="panel filter-item" data-tags="grid_search,result">
+    <h2>0. Grid Search Results</h2>
+    <p>All tested parameter combinations with their MSE, plus the best configuration and its trend.</p>
+    <div class="tag-list"><span class="tag">#grid_search</span><span class="tag">#result</span></div>
+    {{ grid_search_table | safe }}
+    {{ plot_grid_search | safe }}
+</div>
+
+<div class="panel filter-item" data-tags="result,per_step">
+    <h2>0a. Epoch Summary</h2>
+    <p>Per-epoch timing, loss, and MSE summary with a trend chart.</p>
+    <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
+    {{ epoch_table | safe }}
+    {{ plot_epoch_trend | safe }}
+</div>
+
+<div class="panel filter-item" data-tags="params,per_step">
     <h2>1. Exact Parameter Values per Step</h2>
     <p>Independent line charts, one row per epoch, with exact b0, b1, and b2 values.</p>
+    <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
     {{ plot_params_exact | safe }}
 </div>
 
-<div class="panel">
+<div class="panel filter-item" data-tags="params,per_step">
     <h2>2. Generated Parameters Heatmaps</h2>
     <p>Separate heatmaps for absolute parameter values and parameter deltas vs previous epoch.</p>
+    <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
     {{ plot_params_heat | safe }}
 </div>
 
-<div class="panel">
+<div class="panel filter-item" data-tags="params,per_step">
     <h2>3. Parameter Delta Lines by Epoch</h2>
-    <p>For each step, b0, b1, and b2 are plotted as differences vs the previous epoch.</p>
+    <p>For each step, current b0, b1, and b2 are plotted alongside the previous epoch values.</p>
+    <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
     {{ plot_params_delta | safe }}
 </div>
 
-<div class="panel">
-    <h2>4. Prediction Diagnostics</h2>
-    <p>Line comparison of target and prediction for all forecast steps in the latest epoch.</p>
-    {{ plot_pred | safe }}
+<div class="panel filter-item" data-tags="result,per_step">
+    <h2>5. Prediction vs Ground Truth over Epochs</h2>
+    <p>Original-scale target and prediction lines across epochs, using the first forecast step.</p>
+    <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
+    {{ plot_pred_history | safe }}
 </div>
 
-<div class="panel">
-    <h2>5. X Features</h2>
+<div class="panel filter-item" data-tags="X_feature,per_step">
+    <h2>6. X Features</h2>
     <p>Full-range x1 and x2 shown under each other for the latest epoch.</p>
+    <div class="tag-list"><span class="tag">#X_feature</span><span class="tag">#per_step</span></div>
     {{ plot_x | safe }}
 </div>
 
-<div class="panel">
-    <h2>6. Generated Y Evolution</h2>
+<div class="panel filter-item" data-tags="Y_generated,per_step">
+    <h2>7. Generated Y Evolution</h2>
     <p>Absolute values and epoch-to-epoch deltas as heatmaps.</p>
+    <div class="tag-list"><span class="tag">#Y_generated</span><span class="tag">#per_step</span></div>
     {{ plot_y | safe }}
+    <h2 style="margin-top: 22px;">Generated Y over Each Epoch</h2>
+    <p>Line charts showing the generated Y values for every epoch.</p>
+    {{ plot_y_exact | safe }}
+</div>
+
+<div class="panel filter-item" data-tags="result,per_step">
+    <h2>8. Loss Trends over Epochs</h2>
+    <p>Average loss per epoch for the forecaster and generator training loops.</p>
+    <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
+    {{ plot_forecaster_loss | safe }}
+    {{ plot_generator_loss | safe }}
+</div>
+
+<script>
+    (function () {
+        const sidebar = document.getElementById('source-sidebar');
+        const sidebarClose = document.getElementById('sidebar-close');
+        const sidebarReopen = document.getElementById('sidebar-reopen');
+
+        function closeSidebar() {
+            sidebar.classList.add('hidden');
+            sidebarReopen.classList.remove('hidden');
+        }
+
+        function openSidebar() {
+            sidebar.classList.remove('hidden');
+            sidebarReopen.classList.add('hidden');
+        }
+
+        sidebarClose.addEventListener('click', closeSidebar);
+        sidebarReopen.addEventListener('click', openSidebar);
+
+        const checkboxes = Array.from(document.querySelectorAll('#filter-controls input[type="checkbox"]'));
+        const items = Array.from(document.querySelectorAll('.filter-item'));
+        const summary = document.getElementById('filter-summary');
+
+        function getSelectedTags() {
+            return checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+        }
+
+        function applyFilter() {
+            const selected = getSelectedTags();
+
+            if (selected.length === 0) {
+                items.forEach((item) => item.classList.remove('hidden-by-filter'));
+                summary.textContent = 'Showing all sections.';
+                return;
+            }
+
+            let visibleCount = 0;
+            items.forEach((item) => {
+                const tags = (item.dataset.tags || '').split(',').map((x) => x.trim()).filter(Boolean);
+                const matches = selected.some((tag) => tags.includes(tag));
+                item.classList.toggle('hidden-by-filter', !matches);
+                if (matches) {
+                    visibleCount += 1;
+                }
+            });
+
+            summary.textContent = `Showing ${visibleCount} section(s) for: ${selected.map((t) => '#' + t).join(', ')}`;
+        }
+
+        checkboxes.forEach((cb) => cb.addEventListener('change', applyFilter));
+        applyFilter();
+    })();
+</script>
+
+</main>
 </div>
 
 </body>

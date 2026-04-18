@@ -6,7 +6,7 @@ from core.setup import import_itransformer_model
 from forcast_model.base_forcast_model import BaseForecastModel
 
 Model = import_itransformer_model()
-class ITransformerWrapper(BaseForecastModel):
+class ITransformerForcaster(BaseForecastModel):
     def __init__(
         self,
         input_dim=2,
@@ -85,8 +85,9 @@ class ITransformerWrapper(BaseForecastModel):
     def unfreeze(self):
         for p in self.model.parameters():
             p.requires_grad = True
-            
+    @property 
     def parameters(self)-> torch.Tensor:
         return self.model.parameters()
+    @property
     def named_parameters(self):
         return self.model.named_parameters()

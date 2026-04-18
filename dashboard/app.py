@@ -1,7 +1,9 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 import json
+import os
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -18,9 +20,36 @@ PLOTLY_CONFIG = {
 def _load_data(path: str = "output/dashboard_data.json"):
     try:
         with open(path, "r") as f:
-            return json.load(f)
+            payload = json.load(f)
+            if isinstance(payload, dict):
+                return payload.get("records", []), payload.get("meta", {}), payload.get("grid_search_history", [])
+            return payload, {}, []
+    except FileNotFoundError:
+        return [], {}, []
+
+
+def _list_output_sources(output_dir: str = "output"):
+    try:
+        names = [
+            name
+            for name in os.listdir(output_dir)
+            if os.path.isfile(os.path.join(output_dir, name)) and name.lower().endswith(".json")
+        ]
     except FileNotFoundError:
         return []
+
+    names.sort(key=str.lower)
+    return names
+
+
+def _resolve_selected_source(available_sources, selected_source):
+    if not available_sources:
+        return "dashboard_data.json"
+    if selected_source in available_sources:
+        return selected_source
+    if "dashboard_data.json" in available_sources:
+        return "dashboard_data.json"
+    return available_sources[0]
 
 
 def _to_numpy(values):
@@ -32,10 +61,91 @@ def _to_numpy(values):
     return arr.astype(float)
 
 
+def _inverse_y(values, meta):
+    arr = _to_numpy(values)
+    if arr.size == 0:
+        return arr
+    y_mean = float(meta.get("Y_mean", 0.0))
+    y_std = float(meta.get("Y_std", 1.0))
+    return arr * y_std + y_mean
+
+
 def _safe_mean(values):
     if not values:
         return 0.0
     return float(sum(values) / len(values))
+
+
+def _format_params(params):
+    if not isinstance(params, dict):
+        return "{}"
+    return json.dumps(params, sort_keys=True)
+
+
+def _format_scalar(value):
+    try:
+        fval = float(value)
+        if fval.is_integer():
+            return str(int(fval))
+        text = f"{fval:.4f}".rstrip("0").rstrip(".")
+        return text
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _format_params_inline(params):
+    if not isinstance(params, dict) or not params:
+        return "{}"
+    parts = [f"{key}={_format_scalar(value)}" for key, value in sorted(params.items())]
+    return ", ".join(parts)
+
+
+def _html_table(df: pd.DataFrame, empty_message: str):
+    if df.empty:
+        return f'<div class="empty-state">{empty_message}</div>'
+    return df.to_html(index=False, classes="dashboard-table", border=0, escape=True)
+
+
+def _load_config_values():
+    try:
+        from core.config import Config
+    except Exception:
+        return {}
+
+    values = {}
+    for key, raw_value in Config.__dict__.items():
+        if key.startswith("_"):
+            continue
+        if isinstance(raw_value, (staticmethod, classmethod)):
+            continue
+
+        value = getattr(Config, key, raw_value)
+        if callable(value):
+            continue
+
+        if isinstance(value, (int, float, str, bool)) or value is None:
+            values[key] = value
+        else:
+            values[key] = str(value)
+
+    for derived_name in ("total_samples", "hours_per_week"):
+        derived_fn = getattr(Config, derived_name, None)
+        if callable(derived_fn):
+            try:
+                values[derived_name] = derived_fn()
+            except Exception:
+                pass
+
+    return values
+
+
+def _build_config_table():
+    config_values = _load_config_values()
+    if not config_values:
+        return '<div class="empty-state">No config values found.</div>'
+
+    display_values = {key: _format_scalar(value) for key, value in config_values.items()}
+    return _html_table(pd.DataFrame([display_values]), "No config values found.")
 
 
 def _feature_series(step, key):
@@ -45,6 +155,155 @@ def _feature_series(step, key):
 def _global_time_series(step):
     values = [p.get("global_time", idx) for idx, p in enumerate(step.get("data", []))]
     return np.asarray(values, dtype=float)
+
+
+def _build_grid_search_table_and_chart(grid_search_history):
+    if not grid_search_history:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="Grid Search MSE Trend", height=420)
+        empty_table = (
+            '<div class="empty-state">No grid search data found in the exported dashboard payload. '
+            'Run <strong>main.py</strong> again to regenerate output/dashboard_data.json.</div>'
+        )
+        return empty_table, empty_fig
+
+    run = grid_search_history[0]
+    results = run.get("results", []) if isinstance(run, dict) else []
+    df = pd.DataFrame(results)
+    if df.empty:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="Grid Search MSE Trend", height=420)
+        return _html_table(df, "No grid search results found."), empty_fig
+
+    if "mse" not in df.columns:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="Grid Search MSE Trend", height=420)
+        return _html_table(df, "No grid search MSE column found."), empty_fig
+
+    param_columns = [col for col in df.columns if col != "mse"]
+    display_df = df.copy()
+
+    ordered_columns = [*param_columns]
+    if "mse" in display_df.columns:
+        ordered_columns.append("mse")
+    display_df = display_df[ordered_columns]
+
+    for col in param_columns:
+        if pd.api.types.is_numeric_dtype(display_df[col]):
+            display_df[col] = display_df[col].map(
+                lambda value: str(int(value)) if float(value).is_integer() else f"{float(value):.4f}"
+            )
+
+    display_df = display_df.rename(columns={"mse": "MSE"})
+    display_df["MSE"] = display_df["MSE"].astype(float).map(lambda value: f"{value:.4f}")
+
+    best_index = int(df["mse"].astype(float).idxmin())
+    best_params = run.get("best_params", {}) if isinstance(run, dict) else {}
+    best_score = float(run.get("best_score", df["mse"].min())) if isinstance(run, dict) else float(df["mse"].min())
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=np.arange(len(df)),
+            y=df["mse"].astype(float),
+            mode="lines+markers",
+            name="MSE",
+            text=[_format_params(row.to_dict()) for _, row in df[param_columns].iterrows()] if param_columns else None,
+            hovertemplate="Test %{x}<br>MSE %{y:.4f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[best_index],
+            y=[best_score],
+            mode="markers+text",
+            name="Best",
+            text=["best"],
+            textposition="top center",
+            marker=dict(size=12, color="#ef4444"),
+            hovertemplate="Best MSE %{y:.4f}<br>%{text}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title="Grid Search MSE Trend",
+        xaxis_title="Test index",
+        yaxis_title="MSE",
+        height=420,
+        hovermode="x unified",
+    )
+
+    summary = (
+        f'<div class="summary-line"><strong>Best params:</strong> {_format_params_inline(best_params)} '
+        f'| <strong>Best MSE:</strong> {best_score:.4f}</div>'
+    )
+    return summary + _html_table(display_df, "No grid search results found."), fig
+
+
+def _build_epoch_summary_table_and_chart(data, meta):
+    rows = []
+    for step_data in data:
+        targets = _inverse_y(step_data.get("targets"), meta)
+        predictions = _inverse_y(step_data.get("predictions"), meta)
+        if targets.size and predictions.size:
+            if targets.ndim == 1:
+                targets = targets.reshape(-1, 1)
+            if predictions.ndim == 1:
+                predictions = predictions.reshape(-1, 1)
+            n_samples = min(targets.shape[0], predictions.shape[0])
+            n_horizons = min(targets.shape[1], predictions.shape[1])
+            targets_slice = np.squeeze(targets[:n_samples, :n_horizons])
+            predictions_slice = np.squeeze(predictions[:n_samples, :n_horizons])
+            mse = float(np.mean((predictions_slice - targets_slice) ** 2))
+        else:
+            mse = 0.0
+
+        model_losses = list(step_data.get("model_losses", {}).values())
+        generator_losses = list(step_data.get("generator_loss", {}).values())
+        rows.append(
+            {
+                "Epoch": step_data.get("step", len(rows)),
+                "Total time (s)": float(step_data.get("execution_time", 0.0)),
+                "Forecast time (s)": float(step_data.get("forecast_time", 0.0)),
+                "Generator time (s)": float(step_data.get("generator_time", 0.0)),
+                "Model MSE": mse,
+                "Model loss": _safe_mean(model_losses),
+                "Generator loss": _safe_mean(generator_losses),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        empty_fig = go.Figure()
+        empty_fig.update_layout(title="Epoch Trend", height=420)
+        return _html_table(df, "No epoch data found."), empty_fig
+
+    display_df = df.copy()
+    for column in ["Total time (s)", "Forecast time (s)", "Generator time (s)"]:
+        display_df[column] = display_df[column].map(lambda value: f"{float(value):.2f}s")
+    for column in ["Model MSE", "Model loss", "Generator loss"]:
+        display_df[column] = display_df[column].map(lambda value: f"{float(value):.4f}")
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=("Time Breakdown by Epoch", "Loss and Accuracy Trend"),
+        vertical_spacing=0.12,
+    )
+
+    epochs = df["Epoch"].astype(int)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Total time (s)"], mode="lines+markers", name="total"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Forecast time (s)"], mode="lines+markers", name="forecast"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Generator time (s)"], mode="lines+markers", name="generator"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Model MSE"], mode="lines+markers", name="model mse"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Model loss"], mode="lines+markers", name="model loss"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Generator loss"], mode="lines+markers", name="generator loss"), row=2, col=1)
+
+    fig.update_xaxes(title_text="Epoch", row=2, col=1)
+    fig.update_yaxes(title_text="Seconds", row=1, col=1)
+    fig.update_yaxes(title_text="Score", row=2, col=1)
+    fig.update_layout(title="Epoch Trend", height=700, hovermode="x unified")
+    return _html_table(display_df, "No epoch data found."), fig
 
 
 def _build_params_exact_chart(data):
@@ -175,7 +434,7 @@ def _build_params_heatmap_chart(data):
 def _build_params_delta_line_chart(data):
     if not data:
         fig = go.Figure()
-        fig.update_layout(title="Parameter Changes vs Previous Epoch", height=500)
+        fig.update_layout(title="Parameter Values vs Previous Epoch", height=500)
         return fig
 
     rows = len(data)
@@ -183,7 +442,7 @@ def _build_params_delta_line_chart(data):
         rows=rows,
         cols=1,
         shared_xaxes=False,
-        subplot_titles=[f"Epoch {step_data.get('step', idx)} delta" for idx, step_data in enumerate(data)],
+        subplot_titles=[f"Epoch {step_data.get('step', idx)} vs previous" for idx, step_data in enumerate(data)],
         vertical_spacing=0.04,
     )
 
@@ -201,36 +460,54 @@ def _build_params_delta_line_chart(data):
             continue
 
         if prev_b0 is None:
-            d0 = np.zeros_like(b0)
+            p0 = np.zeros_like(b0)
         else:
             n0 = min(len(b0), len(prev_b0))
-            d0 = b0[:n0] - prev_b0[:n0]
+            p0 = prev_b0[:n0]
+            b0 = b0[:n0]
         if prev_b1 is None:
-            d1 = np.zeros_like(b1)
+            p1 = np.zeros_like(b1)
         else:
             n1 = min(len(b1), len(prev_b1))
-            d1 = b1[:n1] - prev_b1[:n1]
+            p1 = prev_b1[:n1]
+            b1 = b1[:n1]
         if prev_b2 is None:
-            d2 = np.zeros_like(b2)
+            p2 = np.zeros_like(b2)
         else:
             n2 = min(len(b2), len(prev_b2))
-            d2 = b2[:n2] - prev_b2[:n2]
+            p2 = prev_b2[:n2]
+            b2 = b2[:n2]
 
-        if d0.size:
+        if b0.size:
             fig.add_trace(
-                go.Scatter(x=np.arange(len(d0)), y=d0, mode="lines", name="b0 delta", legendgroup="b0delta", showlegend=(row == 1)),
+                go.Scatter(x=np.arange(len(b0)), y=b0, mode="lines", name="b0 current", legendgroup="b0", showlegend=(row == 1), line=dict(width=2)),
                 row=row,
                 col=1,
             )
-        if d1.size:
             fig.add_trace(
-                go.Scatter(x=np.arange(len(d1)), y=d1, mode="lines", name="b1 delta", legendgroup="b1delta", showlegend=(row == 1)),
+                go.Scatter(x=np.arange(len(p0)), y=p0, mode="lines", name="b0 previous", legendgroup="b0prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
                 row=row,
                 col=1,
             )
-        if d2.size:
+        if b1.size:
             fig.add_trace(
-                go.Scatter(x=np.arange(len(d2)), y=d2, mode="lines", name="b2 delta", legendgroup="b2delta", showlegend=(row == 1)),
+                go.Scatter(x=np.arange(len(b1)), y=b1, mode="lines", name="b1 current", legendgroup="b1", showlegend=(row == 1), line=dict(width=2)),
+                row=row,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(x=np.arange(len(p1)), y=p1, mode="lines", name="b1 previous", legendgroup="b1prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
+                row=row,
+                col=1,
+            )
+        if b2.size:
+            fig.add_trace(
+                go.Scatter(x=np.arange(len(b2)), y=b2, mode="lines", name="b2 current", legendgroup="b2", showlegend=(row == 1), line=dict(width=2)),
+                row=row,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(x=np.arange(len(p2)), y=p2, mode="lines", name="b2 previous", legendgroup="b2prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
                 row=row,
                 col=1,
             )
@@ -240,16 +517,16 @@ def _build_params_delta_line_chart(data):
 
     fig.update_xaxes(title_text="Parameter index", row=rows, col=1)
     fig.update_layout(
-        title="Parameter Changes vs Previous Epoch",
+        title="Parameter Values vs Previous Epoch",
         height=max(250 * rows, 520),
         hovermode="x unified",
     )
     return fig
 
 
-def _build_prediction_chart(last):
-    targets = np.squeeze(_to_numpy(last.get("targets")))
-    predictions = np.squeeze(_to_numpy(last.get("predictions")))
+def _build_prediction_chart(last, meta):
+    targets = np.squeeze(_inverse_y(last.get("targets"), meta))
+    predictions = np.squeeze(_inverse_y(last.get("predictions"), meta))
 
     if targets.size == 0 or predictions.size == 0:
         fig = go.Figure()
@@ -300,21 +577,97 @@ def _build_prediction_chart(last):
             row=horizon + 1,
             col=1,
         )
-        fig.update_yaxes(title_text="Scaled y", row=horizon + 1, col=1)
+        fig.update_yaxes(title_text="Original y", row=horizon + 1, col=1)
 
     fig.update_xaxes(title_text="Sample index", row=n_horizons, col=1)
     fig.update_layout(
-        title="Prediction vs Ground Truth - All Forecast Steps",
+        title="Prediction vs Ground Truth - All Forecast Steps (Original Scale)",
         height=max(260 * n_horizons, 520),
         hovermode="x unified",
     )
     return fig
 
 
+def _build_prediction_history_chart(data, meta):
+    if not data:
+        fig = go.Figure()
+        fig.update_layout(title="Prediction vs Ground Truth over Epochs", height=500)
+        return fig
+
+    rows = len(data)
+    fig = make_subplots(
+        rows=rows,
+        cols=1,
+        shared_xaxes=False,
+        subplot_titles=[f"Epoch {step_data.get('step', idx)}" for idx, step_data in enumerate(data)],
+        vertical_spacing=0.04,
+    )
+
+    for row, step_data in enumerate(data, start=1):
+        targets = np.squeeze(_inverse_y(step_data.get("targets"), meta))
+        predictions = np.squeeze(_inverse_y(step_data.get("predictions"), meta))
+
+        if targets.size == 0 or predictions.size == 0:
+            continue
+
+        if targets.ndim == 1:
+            targets = targets.reshape(-1, 1)
+        if predictions.ndim == 1:
+            predictions = predictions.reshape(-1, 1)
+
+        n_samples = min(targets.shape[0], predictions.shape[0])
+        n_horizons = min(targets.shape[1], predictions.shape[1])
+        targets = targets[:n_samples, :n_horizons]
+        predictions = predictions[:n_samples, :n_horizons]
+
+        fig.add_trace(
+            go.Scatter(
+                x=np.arange(n_samples),
+                y=targets[:, 0],
+                mode="lines",
+                name="target",
+                legendgroup="target",
+                showlegend=(row == 1),
+                line=dict(color="purple", width=2),
+            ),
+            row=row,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=np.arange(n_samples),
+                y=predictions[:, 0],
+                mode="lines",
+                name="prediction",
+                legendgroup="prediction",
+                showlegend=(row == 1),
+                line=dict(color="orange", width=2),
+            ),
+            row=row,
+            col=1,
+        )
+        fig.update_yaxes(title_text=f"Step {step_data.get('step', row - 1)}", row=row, col=1)
+
+    fig.update_xaxes(title_text="Sample index", row=rows, col=1)
+    fig.update_layout(title="Prediction vs Ground Truth over Epochs", height=max(250 * rows, 520), hovermode="x unified")
+    return fig
+
+
 def _build_features_chart(last):
     x1 = _feature_series(last, "x1")
     x2 = _feature_series(last, "x2")
+
+    # Backward-compatible fix for older dashboard payloads where x1/x2 were
+    # logged from the wrong columns: x1 was hour index and x2 held the real x1.
+    if x1.size and x2.size:
+        x1_is_index_like = np.allclose(x1, np.round(x1), atol=1e-8) and (np.max(x1) - np.min(x1) >= 24)
+        x2_is_near_constant = np.std(x2) < 1e-6
+        if x1_is_index_like and x2_is_near_constant:
+            x1 = x2.copy()
+
     t = _global_time_series(last)
+    if t.size:
+        t = t - np.min(t)
     if len(t) != len(x1):
         t = np.arange(len(x1))
 
@@ -336,7 +689,7 @@ def _build_features_chart(last):
         col=1,
     )
 
-    fig.update_xaxes(title_text="Global time", row=2, col=1)
+    fig.update_xaxes(title_text="Time index", row=2, col=1)
     fig.update_yaxes(title_text="x1", row=1, col=1)
     fig.update_yaxes(title_text="x2", row=2, col=1)
     fig.update_layout(title="X Features - Full Range", height=620, hovermode="x unified")
@@ -391,9 +744,202 @@ def _build_y_history_chart(data):
     return fig
 
 
+def _build_y_exact_chart(data):
+    if not data:
+        fig = go.Figure()
+        fig.update_layout(title="Generated Y over Each Epoch", height=500)
+        return fig
+
+    rows = len(data)
+    fig = make_subplots(
+        rows=rows,
+        cols=1,
+        shared_xaxes=False,
+        subplot_titles=[f"Epoch {step_data.get('step', idx)}" for idx, step_data in enumerate(data)],
+        vertical_spacing=0.04,
+    )
+
+    for row, step_data in enumerate(data, start=1):
+        y = _feature_series(step_data, "y")
+        if y.size == 0:
+            continue
+
+        # Use a per-step local timeline so each epoch starts at 0 and ends at len(y)-1.
+        x = np.arange(len(y), dtype=float)
+
+        fig.add_trace(
+            go.Scatter(x=x, y=y, mode="lines", name="generated y", showlegend=(row == 1)),
+            row=row,
+            col=1,
+        )
+        fig.update_xaxes(range=[0, max(len(y) - 1, 0)], row=row, col=1)
+        fig.update_yaxes(title_text=f"Step {step_data.get('step', row - 1)}", row=row, col=1)
+
+    fig.update_xaxes(title_text="Time index", row=rows, col=1)
+    fig.update_layout(
+        title="Generated Y over Each Epoch",
+        height=max(250 * rows, 520),
+        hovermode="x unified",
+    )
+    return fig
+
+
+def _build_loss_trend_charts(data):
+    if not data:
+        empty_forecaster = go.Figure()
+        empty_forecaster.update_layout(title="Forecaster Loss Trend over Epochs", height=420)
+        empty_generator = go.Figure()
+        empty_generator.update_layout(title="Generator Loss Trend over Epochs", height=420)
+        return empty_forecaster, empty_generator
+
+    epochs = []
+    forecaster_avg_losses = []
+    generator_avg_losses = []
+
+    for idx, step_data in enumerate(data):
+        epochs.append(int(step_data.get("step", idx)))
+
+        model_losses = step_data.get("model_losses", {})
+        if isinstance(model_losses, dict):
+            model_values = [float(v) for v in model_losses.values()]
+        else:
+            model_values = [float(v) for v in model_losses] if model_losses else []
+        forecaster_avg_losses.append(_safe_mean(model_values))
+
+        gen_losses = step_data.get("generator_loss", {})
+        if isinstance(gen_losses, dict):
+            gen_values = [float(v) for v in gen_losses.values()]
+        else:
+            gen_values = [float(v) for v in gen_losses] if gen_losses else []
+        generator_avg_losses.append(_safe_mean(gen_values))
+
+    fig_forecaster = go.Figure()
+    fig_forecaster.add_trace(
+        go.Scatter(
+            x=epochs,
+            y=forecaster_avg_losses,
+            mode="lines+markers",
+            name="forecaster loss",
+            line=dict(color="#2563eb", width=2),
+            marker=dict(size=6),
+        )
+    )
+    fig_forecaster.update_layout(
+        title="Forecaster Loss Trend over Epochs",
+        xaxis_title="Epoch",
+        yaxis_title="Average loss",
+        height=420,
+        hovermode="x unified",
+    )
+
+    fig_generator = go.Figure()
+    fig_generator.add_trace(
+        go.Scatter(
+            x=epochs,
+            y=generator_avg_losses,
+            mode="lines+markers",
+            name="generator loss",
+            line=dict(color="#f97316", width=2),
+            marker=dict(size=6),
+        )
+    )
+    fig_generator.update_layout(
+        title="Generator Loss Trend over Epochs",
+        xaxis_title="Epoch",
+        yaxis_title="Average loss",
+        height=420,
+        hovermode="x unified",
+    )
+
+    return fig_forecaster, fig_generator
+
+
+def _build_epoch_prediction_timelines(data, meta):
+    """Create a grid of 10 timeline charts (2x5), one for each epoch, showing first step prediction."""
+    if not data:
+        fig = go.Figure()
+        fig.update_layout(title="Epoch Prediction Timelines", height=400)
+        return fig
+
+    n_epochs = len(data)
+    n_cols = 5
+    n_rows = (n_epochs + n_cols - 1) // n_cols
+    
+    fig = make_subplots(
+        rows=n_rows,
+        cols=n_cols,
+        subplot_titles=[f"Epoch {step_data.get('step', idx)}/{n_epochs - 1}" for idx, step_data in enumerate(data)],
+        shared_yaxes=False,
+        vertical_spacing=0.15,
+        horizontal_spacing=0.08,
+    )
+
+    for idx, step_data in enumerate(data):
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
+        
+        targets = np.squeeze(_inverse_y(step_data.get("targets"), meta))
+        predictions = np.squeeze(_inverse_y(step_data.get("predictions"), meta))
+
+        if targets.size == 0 or predictions.size == 0:
+            continue
+
+        if targets.ndim == 1:
+            targets = targets.reshape(-1, 1)
+        if predictions.ndim == 1:
+            predictions = predictions.reshape(-1, 1)
+
+        n_samples = min(targets.shape[0], predictions.shape[0])
+        n_horizons = min(targets.shape[1], predictions.shape[1])
+        targets = targets[:n_samples, :n_horizons]
+        predictions = predictions[:n_samples, :n_horizons]
+
+        # Only plot first step (horizon 0)
+        fig.add_trace(
+            go.Scatter(
+                x=np.arange(n_samples),
+                y=targets[:, 0],
+                mode="lines",
+                name="target",
+                legendgroup="target",
+                showlegend=(idx == 0),
+                line=dict(color="blue", width=2),
+            ),
+            row=row,
+            col=col,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=np.arange(n_samples),
+                y=predictions[:, 0],
+                mode="lines",
+                name="prediction",
+                legendgroup="prediction",
+                showlegend=(idx == 0),
+                line=dict(color="orange", width=2),
+            ),
+            row=row,
+            col=col,
+        )
+        fig.update_xaxes(title_text="Sample", row=row, col=col, tickfont=dict(size=10))
+        fig.update_yaxes(title_text="Y", row=row, col=col, tickfont=dict(size=10))
+
+    fig.update_layout(
+        title="First Step Prediction Timeline - All Epochs (Original Scale)",
+        height=max(280 * n_rows, 520),
+        hovermode="x unified",
+    )
+    return fig
+
+
 @app.route("/")
 def index():
-    data = _load_data()
+    available_sources = _list_output_sources("output")
+    requested_source = request.args.get("source", "")
+    active_source = _resolve_selected_source(available_sources, requested_source)
+    data_path = os.path.join("output", active_source)
+    data, meta, grid_search_history = _load_data(data_path)
+    config_table = _build_config_table()
 
     if not data:
         empty = go.Figure()
@@ -401,30 +947,54 @@ def index():
         empty_html = empty.to_html(full_html=False, config=PLOTLY_CONFIG)
         return render_template(
             "index.html",
+            grid_search_table='<div class="empty-state">No grid search data found.</div>',
+            plot_grid_search=empty_html,
+            epoch_table='<div class="empty-state">No epoch data found.</div>',
+            plot_epoch_trend=empty_html,
             plot_params_exact=empty_html,
             plot_params_heat=empty_html,
             plot_params_delta=empty_html,
-            plot_pred=empty_html,
+            plot_pred_history=empty_html,
             plot_x=empty_html,
             plot_y=empty_html,
+            plot_y_exact=empty_html,
+            plot_forecaster_loss=empty_html,
+            plot_generator_loss=empty_html,
+            available_sources=available_sources,
+            active_source=active_source,
+            config_table=config_table,
         )
 
+    grid_search_table, fig_grid_search = _build_grid_search_table_and_chart(grid_search_history)
+    epoch_table, fig_epoch_trend = _build_epoch_summary_table_and_chart(data, meta)
     fig_params_exact = _build_params_exact_chart(data)
     fig_params_heat = _build_params_heatmap_chart(data)
     fig_params_delta = _build_params_delta_line_chart(data)
     last = data[-1]
-    fig_pred = _build_prediction_chart(last)
+    fig_pred_history = _build_prediction_history_chart(data, meta)
     fig_x = _build_features_chart(last)
     fig_y = _build_y_history_chart(data)
+    fig_y_exact = _build_y_exact_chart(data)
+    fig_forecaster_loss, fig_generator_loss = _build_loss_trend_charts(data)
 
     return render_template(
         "index.html",
+        grid_search_table=grid_search_table,
+        plot_grid_search=fig_grid_search.to_html(full_html=False, config=PLOTLY_CONFIG),
+        epoch_table=epoch_table,
+        plot_epoch_trend=fig_epoch_trend.to_html(full_html=False, config=PLOTLY_CONFIG),
         plot_params_exact=fig_params_exact.to_html(full_html=False, config=PLOTLY_CONFIG),
         plot_params_heat=fig_params_heat.to_html(full_html=False, config=PLOTLY_CONFIG),
         plot_params_delta=fig_params_delta.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_pred=fig_pred.to_html(full_html=False, config=PLOTLY_CONFIG),
+        plot_pred_history=fig_pred_history.to_html(full_html=False, config=PLOTLY_CONFIG),
         plot_x=fig_x.to_html(full_html=False, config=PLOTLY_CONFIG),
         plot_y=fig_y.to_html(full_html=False, config=PLOTLY_CONFIG),
+        plot_y_exact=fig_y_exact.to_html(full_html=False, config=PLOTLY_CONFIG),
+        plot_forecaster_loss=fig_forecaster_loss.to_html(full_html=False, config=PLOTLY_CONFIG),
+        plot_generator_loss=fig_generator_loss.to_html(full_html=False, config=PLOTLY_CONFIG),
+        available_sources=available_sources,
+        active_source=active_source,
+        config_table=config_table,
     )
 
 

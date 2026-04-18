@@ -27,7 +27,7 @@ class Config:
     init_b2_min = -3.0
     init_b2_max = 3.0
 
-    generator_learning_rate = 2e-1
+    generator_learning_rate = 3e-1
     forcaster_learning_rate = 1e-4
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
@@ -37,6 +37,11 @@ class Config:
     generator_epoch = 10
     grade_search_epochs = 10
 
-    total_samples = 8760
-    hours_per_day = 24
-    hours_per_week = 168
+
+    @staticmethod
+    def total_samples():
+        return Config.hours_per_day * Config.days_per_year
+
+    @staticmethod
+    def hours_per_week():
+        return Config.hours_per_day * Config.days_per_week

@@ -38,3 +38,6 @@ class BaseForecastModel(ABC):
     @abstractmethod
     def named_parameters(self):
         raise NotImplementedError("Subclasses must implement this method")
+    @property
+    def name(self):
+        return self.__class__.__name__
