@@ -9,24 +9,32 @@ from forcast_model.base_forcast_model import BaseForecastModel
 
 
 def _import_itransformer_model():
-    project_root = Path(__file__).resolve().parent.parent
+    import sys
+    import importlib
+    from pathlib import Path
+
+    project_root = Path("/content/data_challenger")
     repo_dir = project_root / "external_models" / "iTransformer"
+
     if not repo_dir.exists():
         raise ImportError(f"Missing iTransformer repo at: {repo_dir}")
 
-    repo_str = str(repo_dir)
-    while repo_str in sys.path:
-        sys.path.remove(repo_str)
-    sys.path.insert(0, repo_str)
+    # STEP 1: isolate environment (IMPORTANT)
+    sys.path = [
+        p for p in sys.path
+        if "external_models" not in str(p)
+    ]
 
-    # Avoid reusing similarly named packages from other external repos.
-    for name in ["layers", "layers.Embed", "layers.SelfAttention_Family", "layers.Transformer_EncDec", "utils", "utils.masking", "model"]:
-        sys.modules.pop(name, None)
+    # STEP 2: add ONLY iTransformer root
+    sys.path.insert(0, str(repo_dir))
 
+    # STEP 3: full cache reset (safe version)
     importlib.invalidate_caches()
-    module = importlib.import_module("model.iTransformer")
-    return module.Model
 
+    # STEP 4: import cleanly
+    module = importlib.import_module("model.iTransformer")
+
+    return module.Model
 class ITransformerForcaster(BaseForecastModel):
     def __init__(
         self,
