@@ -1,9 +1,31 @@
 import torch
+import importlib
+import sys
+from pathlib import Path
 
 from core.config import Config
-from core.setup import import_itransformer_model
 
 from forcast_model.base_forcast_model import BaseForecastModel
+
+
+def _import_itransformer_model():
+    project_root = Path(__file__).resolve().parent.parent
+    repo_dir = project_root / "external_models" / "iTransformer"
+    if not repo_dir.exists():
+        raise ImportError(f"Missing iTransformer repo at: {repo_dir}")
+
+    repo_str = str(repo_dir)
+    while repo_str in sys.path:
+        sys.path.remove(repo_str)
+    sys.path.insert(0, repo_str)
+
+    # Avoid reusing similarly named packages from other external repos.
+    for name in ["layers", "layers.Embed", "layers.SelfAttention_Family", "layers.Transformer_EncDec", "utils", "utils.masking", "model"]:
+        sys.modules.pop(name, None)
+
+    importlib.invalidate_caches()
+    module = importlib.import_module("model.iTransformer")
+    return module.Model
 
 class ITransformerForcaster(BaseForecastModel):
     def __init__(
@@ -18,7 +40,7 @@ class ITransformerForcaster(BaseForecastModel):
     ):
         super().__init__()
 
-        Model = import_itransformer_model()
+        Model = _import_itransformer_model()
         self.config = Config()
 
         self.seq_len = self.config.seq_len

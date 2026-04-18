@@ -1,9 +1,37 @@
 import torch
+import importlib
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from core.config import Config
 from forcast_model.base_forcast_model import BaseForecastModel
-from core.setup import import_autoformer_model
+
+
+def _import_autoformer_model():
+    project_root = Path(__file__).resolve().parent.parent
+    repo_dir = project_root / "external_models" / "Autoformer"
+    if not repo_dir.exists():
+        raise ImportError(f"Missing Autoformer repo at: {repo_dir}")
+
+    repo_str = str(repo_dir)
+    while repo_str in sys.path:
+        sys.path.remove(repo_str)
+    sys.path.insert(0, repo_str)
+
+    # Avoid reusing similarly named packages from other external repos.
+    for name in ["layers", "layers.Embed", "layers.AutoCorrelation", "layers.Autoformer_EncDec", "layers.SelfAttention_Family", "layers.Transformer_EncDec", "utils", "utils.masking", "models", "model"]:
+        sys.modules.pop(name, None)
+
+    importlib.invalidate_caches()
+    for module_name in ("model.Autoformer", "models.Autoformer"):
+        try:
+            module = importlib.import_module(module_name)
+            return module.Model
+        except Exception:
+            continue
+
+    raise ImportError(f"Autoformer import failed from local repo: {repo_dir}")
 
 
 class AutoformerForcaster(BaseForecastModel):
@@ -57,7 +85,7 @@ class AutoformerForcaster(BaseForecastModel):
         cfg.moving_avg = 25
         cfg.activation = "gelu"
 
-        model_cls = import_autoformer_model()
+        model_cls = _import_autoformer_model()
         self.model = model_cls(cfg).to(self.device)
 
     def forward(self, X: torch.Tensor) -> torch.Tensor:

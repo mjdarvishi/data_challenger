@@ -29,5 +29,5 @@ def main(features: list[XFeature],forcaster_cls: type[BaseForecastModel]):
     pipe.tracker.export(name=pipe.name)
 
 if __name__ == "__main__":
-    main([XFeature.X5, XFeature.X4], ITransformerForcaster)
+    main([XFeature.X7, XFeature.X5], ITransformerForcaster)
     # main([XFeature.X5, XFeature.X4], AutoformerForcaster)

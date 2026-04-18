@@ -121,8 +121,16 @@ def _purge_conflicting_utils_cache(itransformer_dir: Path):
 # MODEL IMPORTS
 # =========================================================
 
+def _require_local_repo(repo_name: str) -> Path:
+    repo_dir = _default_base_dir() / repo_name
+    if not repo_dir.exists():
+        raise ImportError(
+            f"Missing local repo: {repo_dir}. Place {repo_name} under {_default_base_dir()}."
+        )
+    return repo_dir
+
 def import_itransformer_model():
-    itransformer_dir, _ = _ensure_model_repo_paths()
+    itransformer_dir = _require_local_repo("iTransformer")
     _prioritize_repo_path(itransformer_dir)
     _purge_conflicting_package_cache(itransformer_dir, ("layers", "utils", "model"))
     _purge_conflicting_utils_cache(itransformer_dir)
@@ -136,7 +144,7 @@ def import_itransformer_model():
 
 
 def import_autoformer_model():
-    _, autoformer_dir = _ensure_model_repo_paths()
+    autoformer_dir = _require_local_repo("Autoformer")
     _prioritize_repo_path(autoformer_dir)
     _purge_conflicting_package_cache(autoformer_dir, ("layers", "utils", "models", "model"))
     importlib.invalidate_caches()
