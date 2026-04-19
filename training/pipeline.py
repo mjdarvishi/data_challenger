@@ -213,10 +213,7 @@ class BasePipeline:
             X_train_adv, Y_train_adv, _, _ ,_,_= self._build_normalize_splitet()
             ges_loss=self.gen_trainer.fit(X_train_adv, Y_train_adv, self.forcast_trainer)
             generator_loss[step] = ges_loss
-            if step<2:
-                for name, param in self.gen_model.named_parameters():
-                    grad_norm = param.grad.norm().item() if param.grad is not None else 0.0
-                    print(f"  {name}: grad_norm={grad_norm:.6f}")
+            # self._debug(step)
         generator_time = perf_counter() - generator_start
         # =========================
         # 8. UNFREEZE MODEL
@@ -257,3 +254,9 @@ class BasePipeline:
         for epoch in range(self.config.training_epochs):
             self.run_step(epoch)
     
+    
+    def _debug(self,step:int):
+        if step<2:
+            for name, param in self.gen_model.named_parameters():
+                grad_norm = param.grad.norm().item() if param.grad is not None else 0.0
+                print(f"  {name}: grad_norm={grad_norm:.6f}")

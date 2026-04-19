@@ -13,7 +13,7 @@ def _import_itransformer_model():
     import importlib
     from pathlib import Path
 
-    project_root = Path("/content/data_challenger")
+    project_root = Path(__file__).resolve().parents[1]
     repo_dir = project_root / "external_models" / "iTransformer"
 
     if not repo_dir.exists():
@@ -27,6 +27,20 @@ def _import_itransformer_model():
 
     # STEP 2: add ONLY iTransformer root
     sys.path.insert(0, str(repo_dir))
+
+    # Remove cached modules from other locations that can shadow iTransformer internals.
+    for prefix in ("utils", "layers", "model"):
+        for name in list(sys.modules):
+            if name == prefix or name.startswith(f"{prefix}."):
+                mod = sys.modules.get(name)
+                mod_file = getattr(mod, "__file__", "") if mod is not None else ""
+                if mod_file:
+                    try:
+                        mod_path = Path(mod_file).resolve()
+                    except OSError:
+                        continue
+                    if repo_dir not in mod_path.parents:
+                        sys.modules.pop(name, None)
 
     # STEP 3: full cache reset (safe version)
     importlib.invalidate_caches()
@@ -83,18 +97,18 @@ class ITransformerForcaster(BaseForecastModel):
 
     @classmethod
     def search_space(cls):
-    #    return {
-    #         "d_model": [128, 256],
-    #         "n_heads": [4, 8],
-    #         "e_layers": [2, 3],
-    #         "dropout": [0.1, 0.2],
-    #     }
-        return {
-            "d_model": [128],
-            "n_heads": [4],
-            "e_layers": [2],
-            "dropout": [0.1],
+       return {
+            "d_model": [128, 256],
+            "n_heads": [4, 8],
+            "e_layers": [2, 3],
+            "dropout": [0.1, 0.2],
         }
+        # return {
+        #     "d_model": [128],
+        #     "n_heads": [4],
+        #     "e_layers": [2],
+        #     "dropout": [0.1],
+        # }
     def forward(self, X)-> torch.Tensor:
         B = X.shape[0]
         x_dec = torch.zeros(B, self.pred_len, X.shape[2], device=X.device)
