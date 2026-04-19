@@ -83,18 +83,18 @@ class ITransformerForcaster(BaseForecastModel):
 
     @classmethod
     def search_space(cls):
-       return {
-            "d_model": [128, 256],
-            "n_heads": [4, 8],
-            "e_layers": [2, 3],
-            "dropout": [0.1, 0.2],
+    #    return {
+    #         "d_model": [128, 256],
+    #         "n_heads": [4, 8],
+    #         "e_layers": [2, 3],
+    #         "dropout": [0.1, 0.2],
+    #     }
+        return {
+            "d_model": [128],
+            "n_heads": [4],
+            "e_layers": [2],
+            "dropout": [0.1],
         }
-        # return {
-        #     "d_model": [128],
-        #     "n_heads": [4],
-        #     "e_layers": [2],
-        #     "dropout": [0.1],
-        # }
     def forward(self, X)-> torch.Tensor:
         B = X.shape[0]
         x_dec = torch.zeros(B, self.pred_len, X.shape[2], device=X.device)
