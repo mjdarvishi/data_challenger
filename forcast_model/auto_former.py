@@ -9,7 +9,7 @@ from forcast_model.base_forcast_model import BaseForecastModel
 
 
 def _import_autoformer_model():
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = Path(__file__).resolve().parents[1]
     repo_dir = project_root / "external_models" / "Autoformer"
     if not repo_dir.exists():
         raise ImportError(f"Missing Autoformer repo at: {repo_dir}")
