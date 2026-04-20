@@ -380,6 +380,71 @@ class RegimeSwitchGenerator(XFeatureGenerator):
             device=t_tensor.device,
             dtype=torch.float,
         )
+
+
+class StructuralPhaseGenerator(XFeatureGenerator):
+    """
+    X12: Structural signal with weekly phase modulation, regime shift,
+    nonlinear component, and weekly lag memory.
+
+    Formula
+    -------
+    h(t)   = t mod 168
+    phi(t) = phi_amp * sin(2pi * h(t) / 168)
+    base(t)= sin(2pi * t / 8760 + phi(t))
+
+    out(t) = base(t) + delta_regime(t) + alpha * base(t)^2 + gamma * out(t-168)
+    """
+
+    def __init__(
+        self,
+        name: str = "X12",
+        phi_amp: float = 0.8,
+        gamma: float = 0.2,
+        alpha: float = 0.15,
+        delta: float = 0.3,
+        noise_std: float = 0.1,
+    ):
+        super().__init__(name)
+        self.phi_amp = phi_amp
+        self.gamma = gamma
+        self.alpha = alpha
+        self.delta = delta
+        self.noise_std = noise_std
+        self.hours_per_week = Config.hours_per_week()
+        self.yearly_period = Config.total_samples()
+
+    def generate(self, t: int) -> float:
+        t_arr = np.array([t], dtype=float)
+        return float(self.generate_numpy(t_arr)[0])
+
+    def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
+        t_values = t_values.astype(float)
+        n = t_values.shape[0]
+        if n == 0:
+            return np.array([], dtype=float)
+
+        # Structural weekly phase term: phi_amp * sin(2*pi*h/168)
+        hour_index = np.mod(t_values, self.hours_per_week)
+        phi = self.phi_amp * np.sin(2 * np.pi * hour_index / self.hours_per_week)
+        x1 = np.sin(2 * np.pi * t_values / self.yearly_period + phi)
+
+        out = np.zeros(n, dtype=float)
+        half = n // 2
+        for i in range(n):
+            regime = self.delta if i >= half else 0.0
+            lag_term = self.gamma * out[i - self.hours_per_week] if i >= self.hours_per_week else 0.0
+            noise = np.random.normal(0.0, self.noise_std)
+            out[i] = x1[i] + regime + self.alpha * (x1[i] ** 2) + lag_term + noise
+
+        return out
+
+    def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
+        return torch.tensor(
+            self.generate_numpy(t_tensor.detach().cpu().numpy()),
+            device=t_tensor.device,
+            dtype=torch.float,
+        )
         
 class DelayedDependencyGenerator(XFeatureGenerator):
     """

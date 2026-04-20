@@ -15,6 +15,7 @@ class XFeature(Enum):
     X9 = "x9"
     X10 = "x10"
     X11 = "x11"
+    X12 = "x12"
 
 
 class SplitMode(Enum):
@@ -69,6 +70,10 @@ class Config:
     
     spike_prob: float = 0.02
     spike_amplitude: float = 10.0
+    structural_phi_amp: float = 0.8
+    structural_gamma: float = 0.2
+    structural_alpha: float = 0.15
+    structural_delta: float = 0.3
 
     @staticmethod
     def total_samples():
@@ -113,5 +118,9 @@ class Config:
             "alpha": Config.alpha,
             "beta": Config.beta,
             "spike_prob": Config.spike_prob,
-            "spike_amplitude": Config.spike_amplitude
+            "spike_amplitude": Config.spike_amplitude,
+            "structural_phi_amp": Config.structural_phi_amp,
+            "structural_gamma": Config.structural_gamma,
+            "structural_alpha": Config.structural_alpha,
+            "structural_delta": Config.structural_delta,
         }

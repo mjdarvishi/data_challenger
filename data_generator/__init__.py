@@ -10,6 +10,7 @@ from .x_feature_generators import (
     MultiplicativeInteractionGenerator,
     SparseSpikeGenerator,
     NonlinearCompositeGenerator,
+    StructuralPhaseGenerator,
     
     
 )
@@ -26,4 +27,5 @@ __all__ = [
     "MultiplicativeInteractionGenerator",
     "SparseSpikeGenerator",
     "NonlinearCompositeGenerator",
+    "StructuralPhaseGenerator",
 ]

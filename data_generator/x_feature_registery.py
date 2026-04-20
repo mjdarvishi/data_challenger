@@ -12,6 +12,7 @@ from data_generator import (
     MultiplicativeInteractionGenerator,
     SparseSpikeGenerator,
     NonlinearCompositeGenerator,
+    StructuralPhaseGenerator,
 )
 from data_generator.x_feature_generators import XFeatureGenerator
 from core.config import Config, XFeature
@@ -78,6 +79,14 @@ class XFeatureRegistery:
         )
         self.generator_registry[XFeature.X11] = NonlinearCompositeGenerator(
             name=XFeature.X11.value,
+            noise_std=Config.noise_std,
+        )
+        self.generator_registry[XFeature.X12] = StructuralPhaseGenerator(
+            name=XFeature.X12.value,
+            phi_amp=Config.structural_phi_amp,
+            gamma=Config.structural_gamma,
+            alpha=Config.structural_alpha,
+            delta=Config.structural_delta,
             noise_std=Config.noise_std,
         )
         
