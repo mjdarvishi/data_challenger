@@ -5,6 +5,8 @@ from forcast_model.grid_search import GridSearchEngine
 from training.pipeline import BasePipeline
 from forcast_model.itransformer import ITransformerForcaster
 from forcast_model.auto_former import AutoformerForcaster
+from forcast_model.dlinear import DLinearForcaster
+from forcast_model.nlinear import NLinearForcaster
 from data_generator.x_feature_registery import XFeatureRegistery
 from data_generator.generator_model import GeneratorModel
 from core.setup import setup_models
@@ -29,5 +31,6 @@ def main(features: list[XFeature],forcaster_cls: type[BaseForecastModel]):
     pipe.tracker.export(name=pipe.name)
 
 if __name__ == "__main__":
-    main([XFeature.X7, XFeature.X5], AutoformerForcaster)
+    main([XFeature.X4, XFeature.X5], ITransformerForcaster)
+    # main([XFeature.X7, XFeature.X5], NLinearForcaster)
     # main([XFeature.X5, XFeature.X4], AutoformerForcaster)

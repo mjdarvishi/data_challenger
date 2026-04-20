@@ -53,17 +53,21 @@ def _ensure_model_repo_paths(base_dir=None):
 
     itransformer_dir = _resolve_repo_dir(base_path, "iTransformer")
     autoformer_dir = _resolve_repo_dir(base_path, "Autoformer")
+    dlinear_dir = _resolve_repo_dir(base_path, "LTSF-Linear")
 
     legacy_itransformer_dir = _project_root() / "iTransformer"
     legacy_autoformer_dir = _project_root() / "Autoformer"
+    legacy_dlinear_dir = _project_root() / "LTSF-Linear"
 
     preferred_paths = [
         itransformer_dir,
         itransformer_dir / "iTransformer",
         autoformer_dir,
+        dlinear_dir,
         legacy_itransformer_dir,
         legacy_itransformer_dir / "iTransformer",
         legacy_autoformer_dir,
+        legacy_dlinear_dir,
     ]
 
     # remove duplicates from sys.path
@@ -77,7 +81,7 @@ def _ensure_model_repo_paths(base_dir=None):
         if repo_path.exists():
             sys.path.insert(0, str(repo_path))
 
-    return itransformer_dir, autoformer_dir
+    return itransformer_dir, autoformer_dir, dlinear_dir
 
 
 def _run_cmd(cmd):
@@ -170,6 +174,7 @@ def setup_models(base_dir=None, seed=42):
     Clean setup for:
     - iTransformer
     - Autoformer
+    - LTSF-Linear (DLinear)
 
     SAMFormer REMOVED (not compatible with adversarial training)
     """
@@ -270,15 +275,30 @@ def setup_models(base_dir=None, seed=42):
         print("-> Autoformer already exists")
 
     # -------------------------
-    # 6. sys.path setup
+    # 6. Clone LTSF-Linear (DLinear)
     # -------------------------
-    for repo_path in [itransformer_dir, autoformer_dir]:
+    dlinear_dir = _migrate_repo_if_needed(base_path, "LTSF-Linear")
+
+    if not dlinear_dir.exists():
+        _run_cmd([
+            "git",
+            "clone",
+            "https://github.com/cure-lab/LTSF-Linear.git",
+            str(dlinear_dir),
+        ])
+    else:
+        print("-> LTSF-Linear already exists")
+
+    # -------------------------
+    # 7. sys.path setup
+    # -------------------------
+    for repo_path in [itransformer_dir, autoformer_dir, dlinear_dir]:
         repo_str = str(repo_path)
         if repo_str not in sys.path:
             sys.path.insert(0, repo_str)
 
     # -------------------------
-    # 7. sanity imports
+    # 8. sanity imports
     # -------------------------
     try:
         import numpy
@@ -290,7 +310,7 @@ def setup_models(base_dir=None, seed=42):
         raise
 
     # -------------------------
-    # 8. device info
+    # 9. device info
     # -------------------------
     print("GPU Available:", torch.cuda.is_available())
     if torch.cuda.is_available():

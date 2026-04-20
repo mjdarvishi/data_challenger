@@ -42,27 +42,38 @@ class XFeatureRegistery:
         )
         self.generator_registry[XFeature.X3] = YearlyWeeklySineNoiseGenerator(
             name=XFeature.X3.value,
+            noise_std=Config.noise_std
         )
         self.generator_registry[XFeature.X4] = ConstantWithNoiseGenerator(
             name=XFeature.X4.value,
         )
         self.generator_registry[XFeature.X5] = TemperatureSeasonalGenerator(
             name=XFeature.X5.value,
+            noise_std=Config.noise_std
         )
         self.generator_registry[XFeature.X6] = TemperatureStructuralGenerator(
             name=XFeature.X6.value,
+            noise_std=Config.noise_std,
+            gamma=Config.lag_gamma
         )
         self.generator_registry[XFeature.X7] = RegimeSwitchGenerator(
             name=XFeature.X7.value,
+            noise_std=Config.noise_std
         )
         self.generator_registry[XFeature.X8] = DelayedDependencyGenerator(
             name=XFeature.X8.value,
+            noise_std=Config.noise_std,
+            alpha=Config.alpha,
+            beta=Config.beta
         )
         self.generator_registry[XFeature.X9] = MultiplicativeInteractionGenerator(
             name=XFeature.X9.value,
+            noise_std=Config.noise_std
         )
         self.generator_registry[XFeature.X10] = SparseSpikeGenerator(
             name=XFeature.X10.value,
+            spike_prob=Config.spike_prob,
+            spike_amplitude=Config.spike_amplitude
         )
         
         

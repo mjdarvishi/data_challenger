@@ -16,6 +16,9 @@ class XFeature(Enum):
 
 
 class Config:
+    
+    debug: bool = True
+    
     hours_per_day: int = 24
     days_per_week: int = 7
     days_per_year: int = 365
@@ -31,8 +34,7 @@ class Config:
     init_b2_min = -3.0
     init_b2_max = 3.0
 
-    generator_learning_rate = 3e-1
-    forcaster_learning_rate = 1e-4
+    generator_trainer_learning_rate = 3e-1
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
@@ -41,6 +43,16 @@ class Config:
     generator_epoch = 10
     grade_search_epochs = 10
     input_dim: int = 6
+
+
+    noise_std: float = 2
+    lag_gamma: float = 0.5
+    
+    alpha: float = 0.6
+    beta: float = 0.3
+    
+    spike_prob: float = 0.02
+    spike_amplitude: float = 10.0
 
     @staticmethod
     def total_samples():
@@ -67,13 +79,19 @@ class Config:
             "init_b1_max": Config.init_b1_max,
             "init_b2_min": Config.init_b2_min,
             "init_b2_max": Config.init_b2_max,
-            "generator_learning_rate": Config.generator_learning_rate,
-            "forcaster_learning_rate": Config.forcaster_learning_rate,
+            "generator_trainer_learning_rate": Config.generator_trainer_learning_rate,
             "forcaster_trainer_learning_rate": Config.forcaster_trainer_learning_rate,
             "generator_clamp_min": Config.generator_clamp_min,
             "generator_clamp_max": Config.generator_clamp_max,
             "training_epochs": Config.training_epochs,
             "forcast_trainer_epoch": Config.forcast_trainer_epoch,
             "generator_epoch": Config.generator_epoch,
-            "grade_search_epochs": Config.grade_search_epochs
+            "grade_search_epochs": Config.grade_search_epochs,
+            "input_dim": Config.input_dim,
+            "noise_std": Config.noise_std,
+            "lag_gamma": Config.lag_gamma,
+            "alpha": Config.alpha,
+            "beta": Config.beta,
+            "spike_prob": Config.spike_prob,
+            "spike_amplitude": Config.spike_amplitude
         }

@@ -87,7 +87,6 @@ class ITransformerForcaster(BaseForecastModel):
         config.embed = "timeF"
         config.freq = "h"
         config.use_norm = False
-        self.learning_rate = self.config.forcaster_learning_rate
         self.epochs = 1
         config.class_strategy = "projection"
         self.batch_size = self.config.batch_size
@@ -97,18 +96,21 @@ class ITransformerForcaster(BaseForecastModel):
 
     @classmethod
     def search_space(cls):
-       return {
-            "d_model": [128, 256],
-            "n_heads": [4, 8],
-            "e_layers": [2, 3],
-            "dropout": [0.1, 0.2],
-        }
-        # return {
-        #     "d_model": [128],
-        #     "n_heads": [4],
-        #     "e_layers": [2],
-        #     "dropout": [0.1],
-        # }
+   
+        if Config.debug:
+            return {
+                "d_model": [128],
+                "n_heads": [4],
+                "e_layers": [2],
+                "dropout": [0.1],
+            }
+        else:
+                return {
+                "d_model": [128, 256],
+                "n_heads": [4, 8],
+                "e_layers": [2, 3],
+                "dropout": [0.1, 0.2],
+            }
     def forward(self, X)-> torch.Tensor:
         B = X.shape[0]
         x_dec = torch.zeros(B, self.pred_len, X.shape[2], device=X.device)

@@ -211,7 +211,8 @@ class BasePipeline:
             # We regenerate the dataset inside the loop because the generator changes the data distribution at every update,
             # so the model must always train against the current distribution rather than a fixed snapshot.
             X_train_adv, Y_train_adv, _, _ ,_,_= self._build_normalize_splitet()
-            ges_loss=self.gen_trainer.fit_with_per_sample_mse(X_train_adv, Y_train_adv, self.forcast_trainer)
+            # ges_loss=self.gen_trainer.fit_with_per_sample_mse(X_train_adv, Y_train_adv, self.forcast_trainer)
+            ges_loss=self.gen_trainer.fit(X_train_adv, Y_train_adv, self.forcast_trainer)
             generator_loss[step] = ges_loss
             # self._debug(step)
         generator_time = perf_counter() - generator_start
