@@ -796,60 +796,64 @@ def _build_loss_trend_charts(data):
         return empty_forecaster, empty_generator
 
     epochs = []
-    forecaster_avg_losses = []
-    generator_avg_losses = []
+    forecaster_losses_by_step = {}  # {step_idx: [loss_values_across_epochs]}
+    generator_losses_by_step = {}   # {step_idx: [loss_values_across_epochs]}
 
     for idx, step_data in enumerate(data):
         epochs.append(int(step_data.get("step", idx)))
 
         model_losses = step_data.get("model_losses", {})
         if isinstance(model_losses, dict):
-            model_values = [float(v) for v in model_losses.values()]
-        else:
-            model_values = [float(v) for v in model_losses] if model_losses else []
-        forecaster_avg_losses.append(_safe_mean(model_values))
+            for step_idx, loss_val in model_losses.items():
+                if step_idx not in forecaster_losses_by_step:
+                    forecaster_losses_by_step[step_idx] = []
+                forecaster_losses_by_step[step_idx].append(float(loss_val))
 
         gen_losses = step_data.get("generator_loss", {})
         if isinstance(gen_losses, dict):
-            gen_values = [float(v) for v in gen_losses.values()]
-        else:
-            gen_values = [float(v) for v in gen_losses] if gen_losses else []
-        generator_avg_losses.append(_safe_mean(gen_values))
+            for step_idx, loss_val in gen_losses.items():
+                if step_idx not in generator_losses_by_step:
+                    generator_losses_by_step[step_idx] = []
+                generator_losses_by_step[step_idx].append(float(loss_val))
 
     fig_forecaster = go.Figure()
-    fig_forecaster.add_trace(
-        go.Scatter(
-            x=epochs,
-            y=forecaster_avg_losses,
-            mode="lines+markers",
-            name="forecaster loss",
-            line=dict(color="#2563eb", width=2),
-            marker=dict(size=6),
+    for step_idx in sorted(forecaster_losses_by_step.keys()):
+        fig_forecaster.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=forecaster_losses_by_step[step_idx],
+                mode="lines+markers",
+                name=f"step {step_idx}",
+                line=dict(width=2),
+                marker=dict(size=6),
+            )
         )
-    )
+
     fig_forecaster.update_layout(
-        title="Forecaster Loss Trend over Epochs",
+        title="Forecaster Loss Trend over Epochs (Per Training Step)",
         xaxis_title="Epoch",
-        yaxis_title="Average loss",
+        yaxis_title="Loss",
         height=420,
         hovermode="x unified",
     )
 
     fig_generator = go.Figure()
-    fig_generator.add_trace(
-        go.Scatter(
-            x=epochs,
-            y=generator_avg_losses,
-            mode="lines+markers",
-            name="generator loss",
-            line=dict(color="#f97316", width=2),
-            marker=dict(size=6),
+    for step_idx in sorted(generator_losses_by_step.keys()):
+        fig_generator.add_trace(
+            go.Scatter(
+                x=epochs,
+                y=generator_losses_by_step[step_idx],
+                mode="lines+markers",
+                name=f"step {step_idx}",
+                line=dict(width=2),
+                marker=dict(size=6),
+            )
         )
-    )
+
     fig_generator.update_layout(
-        title="Generator Loss Trend over Epochs",
+        title="Generator Loss Trend over Epochs (Per Training Step)",
         xaxis_title="Epoch",
-        yaxis_title="Average loss",
+        yaxis_title="Loss",
         height=420,
         hovermode="x unified",
     )
