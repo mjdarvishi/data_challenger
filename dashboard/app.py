@@ -291,33 +291,19 @@ def _build_grid_search_table_and_chart(grid_search_history):
 def _build_epoch_summary_table_and_chart(data, meta):
     rows = []
     for step_data in data:
-        mse = step_data.get("pred_mse")
-        if mse is None:
-            targets = _inverse_y(step_data.get("targets"), meta)
-            predictions = _inverse_y(step_data.get("predictions"), meta)
-            if targets.size and predictions.size:
-                if targets.ndim == 1:
-                    targets = targets.reshape(-1, 1)
-                if predictions.ndim == 1:
-                    predictions = predictions.reshape(-1, 1)
-                n_samples = min(targets.shape[0], predictions.shape[0])
-                n_horizons = min(targets.shape[1], predictions.shape[1])
-                targets_slice = np.squeeze(targets[:n_samples, :n_horizons])
-                predictions_slice = np.squeeze(predictions[:n_samples, :n_horizons])
-                mse = float(np.mean((predictions_slice - targets_slice) ** 2))
-            else:
-                mse = 0.0
-        mse = float(mse)
+        train_mse = step_data.get("train_eval_mse", 0.0)
+        val_mse = step_data.get("val_eval_mse", 0.0)
+        test_mse = step_data.get("test_eval_mse", 0.0)
 
-        model_losses = list(step_data.get("model_losses", {}).values())
         rows.append(
             {
                 "Epoch": step_data.get("step", len(rows)),
                 "Total time (s)": float(step_data.get("execution_time", 0.0)),
                 "Forecast time (s)": float(step_data.get("forecast_time", 0.0)),
                 "Generator time (s)": float(step_data.get("generator_time", 0.0)),
-                "Forecaster loss": _safe_mean(model_losses),
-                "Prediction MSE": mse,
+                "Train MSE": float(train_mse) if train_mse is not None else 0.0,
+                "Val MSE": float(val_mse) if val_mse is not None else 0.0,
+                "Test MSE": float(test_mse) if test_mse is not None else 0.0,
             }
         )
 
@@ -330,7 +316,7 @@ def _build_epoch_summary_table_and_chart(data, meta):
     display_df = df.copy()
     for column in ["Total time (s)", "Forecast time (s)", "Generator time (s)"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.2f}s")
-    for column in ["Forecaster loss", "Prediction MSE"]:
+    for column in ["Train MSE", "Val MSE", "Test MSE"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.4f}")
 
     fig = make_subplots(
@@ -345,8 +331,9 @@ def _build_epoch_summary_table_and_chart(data, meta):
     fig.add_trace(go.Scatter(x=epochs, y=df["Total time (s)"], mode="lines+markers", name="total"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Forecast time (s)"], mode="lines+markers", name="forecast"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Generator time (s)"], mode="lines+markers", name="generator"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=epochs, y=df["Forecaster loss"], mode="lines+markers", name="forecaster loss"), row=2, col=1)
-    fig.add_trace(go.Scatter(x=epochs, y=df["Prediction MSE"], mode="lines+markers", name="prediction mse"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Train MSE"], mode="lines+markers", name="train MSE"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Val MSE"], mode="lines+markers", name="val MSE"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Test MSE"], mode="lines+markers", name="test MSE"), row=2, col=1)
 
     fig.update_xaxes(title_text="Epoch", row=2, col=1)
     fig.update_yaxes(title_text="Seconds", row=1, col=1)
