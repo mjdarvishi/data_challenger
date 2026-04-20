@@ -19,9 +19,9 @@ class XFeature(Enum):
 
 
 class SplitMode(Enum):
-    CHRONOLOGICAL = "chronological"
-    RANDOM_WINDOW = "random_window"
-    WEEKLY_BLOCK = "weekly_block"
+    CHRONOLOGICAL = "CHRONOLOGICAL"
+    RANDOM_WINDOW = "RANDOM_WINDOW"
+    WEEKLY_BLOCK = "WEEKLY_BLOCK"
 
 
 class Config:
@@ -35,7 +35,7 @@ class Config:
     pred_len: int = 6
     train_ratio: float = 0.8
     val_ratio: float = 0.1
-    split_mode: SplitMode = SplitMode.WEEKLY_BLOCK
+    split_mode: SplitMode = SplitMode.CHRONOLOGICAL
     split_seed: int = 42
     random_window_size: int = 168
     batch_size: int = 32

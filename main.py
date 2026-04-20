@@ -9,7 +9,7 @@ from forcast_model.dlinear import DLinearForcaster
 from forcast_model.nlinear import NLinearForcaster
 from data_generator.x_feature_registery import XFeatureRegistery
 from data_generator.generator_model import GeneratorModel
-
+from core.config import Config
 def main(
     features: list[XFeature],
     forcaster_cls: type[BaseForecastModel],
@@ -28,7 +28,7 @@ def main(
         model_fixed_kwargs={"input_dim": Config.input_dim},
     )
     pipe = BasePipeline(
-        name=f"{features_str}_{forcaster_cls.__name__}",
+        name=f"{features_str}_{Config.split_mode.value}_{forcaster_cls.__name__}",
         x_registery=x_registery,
         gen_model=gen_model,
         grid_search_engine=grid_engine,
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     #     ITransformerForcaster,
     # )
     main(
-        [XFeature.X12,XFeature.X5],
+        [XFeature.X12,XFeature.X1],
         ITransformerForcaster,
     )
     # main([XFeature.X7, XFeature.X5], NLinearForcaster)
