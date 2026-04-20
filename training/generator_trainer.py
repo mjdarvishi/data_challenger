@@ -15,30 +15,18 @@ class GeneratorTrainer:
 
     def fit(self, forcast_trainer: ForecastTrainer, build_normalize_splitet_func: callable) -> dict[int, float]:
         generator_loss: dict[int, float] = {}
-        best_gen_loss = 0.0  # Track highest adversarial loss (want to maximie)
-        best_gen_state = None
-        
         for step in range(self.config.generator_epoch):
-            X_train_adv, Y_train_adv, _, _ ,_,_= build_normalize_splitet_func()
-            y_pred_adv = forcast_trainer.model.forward(X_train_adv)
-            adv_loss: torch.Tensor =  forcast_trainer.criterion(y_pred_adv, Y_train_adv)
+            X_train, Y_train, _, _ ,_,_= build_normalize_splitet_func()
+            Y_pred = forcast_trainer.model.forward(X_train)
+            loss: torch.Tensor =  forcast_trainer.criterion(Y_pred, Y_train)
             
-            generator_loss[step] = float(adv_loss.item())
+            generator_loss[step] = float(loss.item())
 
             self.optimizer.zero_grad()
-            (-adv_loss).backward()
+            (-loss).backward()
             self.optimizer.step() 
             self.gen_model.clamp_parameters()
-            generator_loss[step] = float(adv_loss.item())
-            
-            # Save best generator state (highest adversarial loss = strongest data difficulty)
-            if generator_loss[step] > best_gen_loss:
-                best_gen_loss = generator_loss[step]
-                best_gen_state = self.gen_model.state_dict()
-        
-        # Restore best generator state from this epoch
-        if best_gen_state is not None:
-            self.gen_model.load_state_dict(best_gen_state)
+            generator_loss[step] = float(loss.item())
             
         return generator_loss
     

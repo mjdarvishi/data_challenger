@@ -654,39 +654,4 @@ class NonlinearCompositeGenerator(XFeatureGenerator):
             device=t_tensor.device,
             dtype=torch.float,
         )
-        
-        
-# Tier 1 (Hardest / Best for adversarial learning)
-# 1. Regime + Seasonality
-# [X7, X5]
-
-# 👉 breaks stationarity + adds smooth structure
-# 👉 best for Autoformer testing
-
-# 2. Memory + Noise
-# [X8, X3]
-
-# 👉 long dependency + randomness
-# 👉 tests sequence modeling ability
-
-# 3. Interaction + Smooth signal
-# [X9, X1]
-
-# 👉 nonlinear + periodic baseline
-# 👉 forces feature interaction learning
-
-# ⚡ Tier 2 (Robust stress tests)
-# 4. Spike + Constant noise
-# [X10, X4]
-
-# 👉 rare events + uncertainty
-
-# 5. Regime + Memory
-# [X7, X8]
-
-# 👉 extremely hard (non-stationary + lag)
-
-# ⚠️ Tier 3 (baseline sanity checks)
-# [X1, X2]
-# [X3, X4]
-# [X5, X2]
+    
