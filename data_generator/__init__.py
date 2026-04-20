@@ -9,6 +9,7 @@ from .x_feature_generators import (
     DelayedDependencyGenerator,
     MultiplicativeInteractionGenerator,
     SparseSpikeGenerator,
+    NonlinearCompositeGenerator,
     
     
 )
@@ -24,4 +25,5 @@ __all__ = [
     "DelayedDependencyGenerator",
     "MultiplicativeInteractionGenerator",
     "SparseSpikeGenerator",
+    "NonlinearCompositeGenerator",
 ]

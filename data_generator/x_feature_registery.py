@@ -10,7 +10,8 @@ from data_generator import (
     RegimeSwitchGenerator,
     DelayedDependencyGenerator,
     MultiplicativeInteractionGenerator,
-    SparseSpikeGenerator
+    SparseSpikeGenerator,
+    NonlinearCompositeGenerator,
 )
 from data_generator.x_feature_generators import XFeatureGenerator
 from core.config import Config, XFeature
@@ -74,6 +75,10 @@ class XFeatureRegistery:
             name=XFeature.X10.value,
             spike_prob=Config.spike_prob,
             spike_amplitude=Config.spike_amplitude
+        )
+        self.generator_registry[XFeature.X11] = NonlinearCompositeGenerator(
+            name=XFeature.X11.value,
+            noise_std=Config.noise_std,
         )
         
         

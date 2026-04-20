@@ -205,16 +205,15 @@ class BasePipeline:
         # =====================================================
         # 7. TRAIN GENERATOR (ADVERSARIAL LOOP)
         # =====================================================
-        generator_loss = {}
         generator_start = perf_counter()
-        for step in range(self.config.generator_epoch):
-            # We regenerate the dataset inside the loop because the generator changes the data distribution at every update,
-            # so the model must always train against the current distribution rather than a fixed snapshot.
-            X_train_adv, Y_train_adv, _, _ ,_,_= self._build_normalize_splitet()
-            # ges_loss=self.gen_trainer.fit_with_per_sample_mse(X_train_adv, Y_train_adv, self.forcast_trainer)
-            ges_loss=self.gen_trainer.fit(X_train_adv, Y_train_adv, self.forcast_trainer)
-            generator_loss[step] = ges_loss
-            # self._debug(step)
+        
+        # We regenerate the dataset inside the loop because the generator changes the data distribution at every update,
+        # so the model must always train against the current distribution rather than a fixed snapshot.
+        
+        # ges_loss=self.gen_trainer.fit_with_per_sample_mse(X_train_adv, Y_train_adv, self.forcast_trainer)
+        generator_loss=self.gen_trainer.fit(self.forcast_trainer,self._build_normalize_splitet)
+
+        # self._debug(step)
         generator_time = perf_counter() - generator_start
         # =========================
         # 8. UNFREEZE MODEL
@@ -231,6 +230,7 @@ class BasePipeline:
             generator_time=generator_time,
             model_losses=model_losses,
             generator_loss=generator_loss,
+            pred_mse=mse,
             gen_model=self.gen_model,
             X_raw=X_raw.detach().cpu(),
             Y_raw=Y_raw.detach().cpu(),
@@ -241,7 +241,6 @@ class BasePipeline:
             f"Epoch {epoch_num} | total: {perf_counter() - step_start:.2f}s | "
             f"forecast: {forecast_time:.2f}s | generator: {generator_time:.2f}s | "
             f"Model MSE: {mse:.4f} "
-            f"generator_loss: {list(generator_loss.values())[0]:.4f}"
         )
 
     def run(self):

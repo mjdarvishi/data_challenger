@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from typing import Dict
 
 from core.config import Config
 
@@ -13,6 +14,13 @@ class XFeatureGenerator:
 
     def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+
+    def generate_numpy_with_context(
+        self,
+        t_values: np.ndarray,
+        context: Dict[str, np.ndarray],
+    ) -> np.ndarray:
+        return self.generate_numpy(t_values)
 
     def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
         values = self.generate_numpy(t_tensor.detach().cpu().numpy())
@@ -30,7 +38,6 @@ class YearlySineGenerator(XFeatureGenerator):
     X1(t) = sin(2πt / P_year)
 
     where:
-        t       = time index (hours)
         P_year  = yearly period (typically 8760 hours)
     """
 
@@ -451,10 +458,13 @@ class MultiplicativeInteractionGenerator(XFeatureGenerator):
     Mathematical definition:
     ----------------------------
 
-    X9(t) =
-        sin(X1(t)) * X2(t)
-        + cos(X3(t) + X4(t))
-        + ε(t)
+    Preferred dependency form (when x1..x4 are available):
+
+        X9(t) = sin(X1(t)) * (1 + 0.5 * X2(t)) + cos(X3(t) + X4(t)) + ε(t)
+
+    Fallback form (if dependencies are not present):
+
+        X9(t) = sin(s1(t)) * (1 + 0.5 * s2(t)) + cos(s3(t) + s4(t)) + ε(t)
 
     ----------------------------
     Intuition:
@@ -471,26 +481,52 @@ class MultiplicativeInteractionGenerator(XFeatureGenerator):
     ):
         super().__init__(name)
         self.noise_std = noise_std
+        self.p_day = Config.hours_per_day
+        self.p_week = Config.hours_per_week()
+        self.p_year = Config.total_samples()
+        self.total = max(1, Config.total_samples() - 1)
 
-    def generate(self, t: int, x1=None, x2=None, x3=None, x4=None) -> float:
-        # fallback random if not provided
-        if x1 is None:
-            x1 = np.sin(t)
-        if x2 is None:
-            x2 = 1.0
-        if x3 is None:
-            x3 = np.cos(t)
-        if x4 is None:
-            x4 = np.sin(t)
+    def _fallback_core_numpy(self, t_values: np.ndarray) -> np.ndarray:
+        t = t_values.astype(float)
+        t_norm = 2.0 * (t / self.total) - 1.0
 
-        return (
-            np.sin(x1) * x2
-            + np.cos(x3 + x4)
-            + np.random.normal(0, self.noise_std)
-        )
+        s1 = np.sin(2 * np.pi * t / self.p_day)
+        s2 = np.cos(2 * np.pi * t / self.p_week)
+        s3 = np.sin(2 * np.pi * t / self.p_year)
+        s4 = np.tanh(2.0 * t_norm)
+
+        return np.sin(s1) * (1.0 + 0.5 * s2) + np.cos(s3 + s4)
+
+    def generate(self, t: int) -> float:
+        base = self._fallback_core_numpy(np.array([t], dtype=float))[0]
+        return float(base + np.random.normal(0, self.noise_std))
 
     def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
-        return np.array([self.generate(int(t)) for t in t_values])
+        base = self._fallback_core_numpy(t_values)
+        noise = np.random.normal(0, self.noise_std, size=t_values.shape[0])
+        return base + noise
+
+    def generate_numpy_with_context(
+        self,
+        t_values: np.ndarray,
+        context: Dict[str, np.ndarray],
+    ) -> np.ndarray:
+        x1 = context.get("x1")
+        x2 = context.get("x2")
+        x3 = context.get("x3")
+        x4 = context.get("x4")
+
+        if any(arr is None for arr in (x1, x2, x3, x4)):
+            return self.generate_numpy(t_values)
+
+        n = min(len(x1), len(x2), len(x3), len(x4), t_values.shape[0])
+        base = np.sin(x1[:n]) * (1.0 + 0.5 * x2[:n]) + np.cos(x3[:n] + x4[:n])
+        noise = np.random.normal(0, self.noise_std, size=n)
+        out = np.zeros(t_values.shape[0], dtype=float)
+        out[:n] = base + noise
+        if n < t_values.shape[0]:
+            out[n:] = self._fallback_core_numpy(t_values[n:])
+        return out
 
     def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
         return torch.tensor(
@@ -549,6 +585,72 @@ class SparseSpikeGenerator(XFeatureGenerator):
     def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
         return torch.tensor(
             self.generate_numpy(t_tensor.cpu().numpy()),
+            device=t_tensor.device,
+            dtype=torch.float,
+        )
+
+
+class NonlinearCompositeGenerator(XFeatureGenerator):
+    """
+    X11: Standalone nonlinear composite signal.
+
+    Formula
+    -------
+    X11(t) =
+        a1 * sin(2pi t / P1)
+        + a2 * cos(2pi t / P2)
+        + q * (t_norm^2)
+        + k * tanh(4 * t_norm)
+        + eps_t
+
+    where:
+        t_norm in [-1, 1]
+        eps_t is Gaussian noise
+    """
+
+    def __init__(
+        self,
+        name: str = "X11",
+        amp_fast: float = 1.3,
+        amp_slow: float = 0.9,
+        quad_coef: float = 0.8,
+        tanh_coef: float = 1.2,
+        noise_std: float = 0.2,
+    ):
+        super().__init__(name)
+        self.amp_fast = amp_fast
+        self.amp_slow = amp_slow
+        self.quad_coef = quad_coef
+        self.tanh_coef = tanh_coef
+        self.noise_std = noise_std
+        self.fast_period = Config.hours_per_day
+        self.slow_period = Config.hours_per_week()
+        self.total = max(1, Config.total_samples() - 1)
+
+    def _core(self, t_values: np.ndarray) -> np.ndarray:
+        t = t_values.astype(float)
+        t_norm = 2.0 * (t / self.total) - 1.0
+
+        fast = self.amp_fast * np.sin(2 * np.pi * t / self.fast_period)
+        slow = self.amp_slow * np.cos(2 * np.pi * t / self.slow_period)
+        quad = self.quad_coef * np.square(t_norm)
+        saturating = self.tanh_coef * np.tanh(4.0 * t_norm)
+
+        return fast + slow + quad + saturating
+
+    def generate(self, t: int) -> float:
+        base = self._core(np.array([t], dtype=float))[0]
+        noise = np.random.normal(0.0, self.noise_std)
+        return float(base + noise)
+
+    def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
+        base = self._core(t_values)
+        noise = np.random.normal(0.0, self.noise_std, size=t_values.shape[0])
+        return base + noise
+
+    def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
+        return torch.tensor(
+            self.generate_numpy(t_tensor.detach().cpu().numpy()),
             device=t_tensor.device,
             dtype=torch.float,
         )

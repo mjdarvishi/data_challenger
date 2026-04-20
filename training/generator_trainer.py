@@ -11,16 +11,36 @@ class GeneratorTrainer:
         self.optimizer = torch.optim.Adam(
             gen_model.parameters(), lr=Config.generator_trainer_learning_rate
         )
+        self.config = Config()
 
-    def fit(self, X: torch.Tensor, Y: torch.Tensor,forcast_trainer: ForecastTrainer) -> float:
-        y_pred_adv = forcast_trainer.model.forward(X)
-        adv_loss =  forcast_trainer.criterion(y_pred_adv, Y)
+    def fit(self, forcast_trainer: ForecastTrainer, build_normalize_splitet_func: callable) -> dict[int, float]:
+        generator_loss: dict[int, float] = {}
+        best_gen_loss = 0.0  # Track highest adversarial loss (want to maximie)
+        best_gen_state = None
         
-        self.optimizer.zero_grad()
-        (-adv_loss).backward()
-        self.optimizer.step() 
-        self.gen_model.clamp_parameters()
-        return float(adv_loss.item())
+        for step in range(self.config.generator_epoch):
+            X_train_adv, Y_train_adv, _, _ ,_,_= build_normalize_splitet_func()
+            y_pred_adv = forcast_trainer.model.forward(X_train_adv)
+            adv_loss: torch.Tensor =  forcast_trainer.criterion(y_pred_adv, Y_train_adv)
+            
+            generator_loss[step] = float(adv_loss.item())
+
+            self.optimizer.zero_grad()
+            (-adv_loss).backward()
+            self.optimizer.step() 
+            self.gen_model.clamp_parameters()
+            generator_loss[step] = float(adv_loss.item())
+            
+            # Save best generator state (highest adversarial loss = strongest data difficulty)
+            if generator_loss[step] > best_gen_loss:
+                best_gen_loss = generator_loss[step]
+                best_gen_state = self.gen_model.state_dict()
+        
+        # Restore best generator state from this epoch
+        if best_gen_state is not None:
+            self.gen_model.load_state_dict(best_gen_state)
+            
+        return generator_loss
     
     def fit_with_per_sample_mse(self, X: torch.Tensor, Y: torch.Tensor, forcast_trainer: ForecastTrainer) -> torch.Tensor:
         self.optimizer.zero_grad()
@@ -60,11 +80,10 @@ class GeneratorTrainer:
         
         # Penalize the generator for making all hours look the same
         # Forces it to find diverse hard patterns, not just one extreme
-        b_stack = torch.stack([
-            self.gen_model.b0, 
-            self.gen_model.b1, 
-            self.gen_model.b2
-        ], dim=0)  # [3, 168]
+        b_stack = torch.cat([
+            self.gen_model.b0.unsqueeze(0),
+            self.gen_model.b,
+        ], dim=0)
         
         # Maximize variance across hours (diversity reward)
         diversity_bonus = -b_stack.var(dim=1).mean() * 0.1

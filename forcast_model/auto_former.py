@@ -37,6 +37,7 @@ def _import_autoformer_model():
 class AutoformerForcaster(BaseForecastModel):
     def __init__(
         self,
+        input_dim: int = None,
         d_model=128,
         n_heads=4,
         e_layers=2,
@@ -47,7 +48,7 @@ class AutoformerForcaster(BaseForecastModel):
         super().__init__()
 
         self.config = Config()
-        self.input_dim = self.config.input_dim
+        self.input_dim = input_dim or self.config.input_dim
 
         self.seq_len = self.config.seq_len
         self.pred_len = self.config.pred_len

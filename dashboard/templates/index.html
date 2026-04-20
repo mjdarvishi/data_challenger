@@ -338,7 +338,7 @@
 
 <div class="panel filter-item" data-tags="result,per_step">
     <h2>0a. Epoch Summary</h2>
-    <p>Per-epoch timing, loss, and MSE summary with a trend chart.</p>
+    <p>Per-epoch timing, forecaster loss, and prediction MSE summary with a trend chart.</p>
     <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
     {{ epoch_table | safe }}
     {{ plot_epoch_trend | safe }}
@@ -391,7 +391,7 @@
 
 <div class="panel filter-item" data-tags="result,per_step">
     <h2>8. Loss Trends over Epochs</h2>
-    <p>Average loss per epoch for the forecaster and generator training loops.</p>
+    <p>Average forecaster loss per epoch and generator loss trend.</p>
     <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
     {{ plot_forecaster_loss | safe }}
     {{ plot_generator_loss | safe }}

@@ -9,9 +9,10 @@ from training.forcast_trainer import ForecastTrainer
 
 
 class GridSearchEngine:
-    def __init__(self, model_class: Type[BaseForecastModel]):
+    def __init__(self, model_class: Type[BaseForecastModel], model_fixed_kwargs: dict | None = None):
         self.model_class = model_class
         self.config = Config()
+        self.model_fixed_kwargs = model_fixed_kwargs or {}
 
     def search(self, X_train, Y_train, X_test, Y_test)-> Tuple[BaseForecastModel, float, dict, pd.DataFrame]:
 
@@ -29,11 +30,12 @@ class GridSearchEngine:
 
         for combo in param_grid:
             params = dict(zip(keys, combo))
+            model_params = {**self.model_fixed_kwargs, **params}
 
             # =========================
             # 1. build model
             # =========================
-            model = self.model_class(**params)
+            model = self.model_class(**model_params)
 
             # =========================
             # 2. wrap trainer
@@ -54,13 +56,13 @@ class GridSearchEngine:
             # =========================
             _, score = trainer.evaluate_pred_mse(X_test, Y_test)
 
-            results.append({**params, "mse": score})
-            print(f"GRID SEARCH Tested params: {params}, MSE: {score:.4f}")
+            results.append({**model_params, "mse": score})
+            print(f"GRID SEARCH Tested params: {model_params}, MSE: {score:.4f}")
 
             if score < best_score:
                 best_score = score
                 best_model = model
-                best_params = params
+                best_params = model_params
 
         if best_model is None:
             raise RuntimeError("Grid search failed")

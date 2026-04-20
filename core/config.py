@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 from enum import Enum
+
+from utils import cal_input_dimenion
 
 
 class XFeature(Enum):
@@ -13,6 +14,7 @@ class XFeature(Enum):
     X8 = "x8"
     X9 = "x9"
     X10 = "x10"
+    X11 = "x11"
 
 
 class Config:
@@ -42,7 +44,11 @@ class Config:
     forcast_trainer_epoch = 10
     generator_epoch = 10
     grade_search_epochs = 10
-    input_dim: int = 6
+    input_dim: int = None  # to be set in main based on selected features
+    
+    @staticmethod
+    def set_input_dim( features: list[XFeature]):
+        Config.input_dim = cal_input_dimenion(features)
 
 
     noise_std: float = 2

@@ -62,7 +62,7 @@ class ForecastTrainer:
 
         return losts
 
-    def evaluate_pred_mse(self, X_test, Y_test)-> tuple[torch.Tensor, float]:
+    def evaluate_pred_mse(self, X_test: torch.Tensor, Y_test: torch.Tensor) -> tuple[torch.Tensor, float]:
         self.model.eval_mode()
 
         with torch.no_grad():

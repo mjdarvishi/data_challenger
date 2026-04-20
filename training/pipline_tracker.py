@@ -23,6 +23,7 @@ class PipelineTracker:
         generator_time: float,
         model_losses: dict[int, float],
         generator_loss: dict[int, float],
+        pred_mse: float,
         gen_model: GeneratorModel,
         X_raw: torch.Tensor,
         Y_raw: torch.Tensor,
@@ -31,8 +32,8 @@ class PipelineTracker:
     ):
         # Extract parameters
         b0 = gen_model.b0.detach().cpu().clone()
-        b1 = gen_model.b1.detach().cpu().clone()
-        b2 = gen_model.b2.detach().cpu().clone()
+        b = gen_model.b.detach().cpu().clone()
+        n_features = b.shape[0]
         samples_per_step = len(X_raw)
 
         data_points = []
@@ -40,24 +41,32 @@ class PipelineTracker:
         for i in range(len(X_raw)):
             global_time = step * samples_per_step + i
             hour = i % 168
-            
-            # X_raw layout is [hour_idx, x1, x2, b0, b1, b2].
-            x1 = float(X_raw[i, 1].item())
-            x2 = float(X_raw[i, 2].item())
+
+            # X_raw layout is [hour_idx, x1..xN].
+            # Generator parameters are taken directly from gen_model for logging.
+            x_values = X_raw[i, 1 : 1 + n_features].detach().cpu().tolist()
             y = float(Y_raw[i].item())
 
             data_points.append(
                 DataPoint(
                     global_time=global_time,
                     hour_of_week=hour,
-                    x1=x1,
-                    x2=x2,
+                    x_values=x_values,
                     b0_used=float(b0[hour].item()),
-                    b1_used=float(b1[hour].item()),
-                    b2_used=float(b2[hour].item()),
+                    b_values=b[:, hour].detach().cpu().tolist(),
                     y=y,
                 )
             )
+
+        params = {
+            "b0": b0.numpy(),
+            "b": b.numpy(),
+        }
+        # Backward-compatible keys expected by existing dashboard views.
+        if n_features >= 1:
+            params["b1"] = b[0].numpy()
+        if n_features >= 2:
+            params["b2"] = b[1].numpy()
 
         record = StepRecord(
             step=step,
@@ -66,11 +75,8 @@ class PipelineTracker:
             generator_time=generator_time,
             model_losses=model_losses,
             generator_loss=generator_loss,
-            params={
-                "b0": b0.numpy(),
-                "b1": b1.numpy(),
-                "b2": b2.numpy(),
-            },
+            pred_mse=float(pred_mse),
+            params=params,
             data=data_points,
             predictions=predictions,
             targets=targets,
@@ -147,6 +153,7 @@ class PipelineTracker:
                 "generator_time": record.generator_time,
                 "model_losses": convert(record.model_losses),
                 "generator_loss": convert(record.generator_loss),
+                "pred_mse": float(record.pred_mse),
                 "params": convert(record.params),
                 "predictions": convert(record.predictions),
                 "targets": convert(record.targets),
@@ -154,12 +161,15 @@ class PipelineTracker:
                     {
                         "global_time": d.global_time,
                         "hour": d.hour_of_week,
-                        "x1": d.x1,
-                        "x2": d.x2,
+                        "x_values": d.x_values,
                         "y": d.y,
                         "b0": d.b0_used,
-                        "b1": d.b1_used,
-                        "b2": d.b2_used,
+                        "b_values": d.b_values,
+                        # Keep these aliases so old dashboard code keeps working.
+                        "x1": d.x_values[0] if len(d.x_values) > 0 else None,
+                        "x2": d.x_values[1] if len(d.x_values) > 1 else None,
+                        "b1": d.b_values[0] if len(d.b_values) > 0 else None,
+                        "b2": d.b_values[1] if len(d.b_values) > 1 else None,
                     }
                     for d in record.data
                 ]

@@ -123,6 +123,84 @@ def _feature_series(step, key):
     return np.asarray([p[key] for p in step.get("data", [])], dtype=float)
 
 
+def _extract_feature_matrix(step):
+    points = step.get("data", [])
+    if not points:
+        return np.empty((0, 0), dtype=float), []
+
+    x_values_rows = []
+    for p in points:
+        values = p.get("x_values")
+        if isinstance(values, list):
+            x_values_rows.append([float(v) for v in values])
+
+    if x_values_rows:
+        min_len = min(len(row) for row in x_values_rows)
+        if min_len == 0:
+            return np.empty((len(x_values_rows), 0), dtype=float), []
+        matrix = np.asarray([row[:min_len] for row in x_values_rows], dtype=float)
+        names = [f"x{i + 1}" for i in range(min_len)]
+        return matrix, names
+
+    # Backward compatibility with old payloads that only have x1/x2 scalars.
+    fallback_names = []
+    for name in ("x1", "x2"):
+        if any(p.get(name) is not None for p in points):
+            fallback_names.append(name)
+
+    if not fallback_names:
+        return np.empty((0, 0), dtype=float), []
+
+    cols = []
+    for name in fallback_names:
+        col = [float(p[name]) for p in points if p.get(name) is not None]
+        cols.append(np.asarray(col, dtype=float))
+
+    min_len = min(len(col) for col in cols)
+    matrix = np.column_stack([col[:min_len] for col in cols])
+    return matrix, fallback_names
+
+
+def _param_name_sort_key(name):
+    if name == "b0":
+        return (0, 0)
+    if isinstance(name, str) and name.startswith("b") and name[1:].isdigit():
+        return (1, int(name[1:]))
+    return (2, str(name))
+
+
+def _extract_param_vectors(step_data):
+    params = step_data.get("params", {})
+    series = []
+
+    b0 = _to_numpy(params.get("b0"))
+    if b0.size:
+        series.append(("b0", b0.reshape(-1)))
+
+    b_matrix = _to_numpy(params.get("b"))
+    if b_matrix.size:
+        if b_matrix.ndim == 1:
+            b_matrix = b_matrix.reshape(1, -1)
+        for i in range(b_matrix.shape[0]):
+            series.append((f"b{i + 1}", np.asarray(b_matrix[i], dtype=float).reshape(-1)))
+        return series
+
+    # Backward compatibility with payloads that only expose b1/b2.
+    fallback_names = []
+    for key in params.keys():
+        if key == "b0":
+            continue
+        if isinstance(key, str) and key.startswith("b"):
+            fallback_names.append(key)
+
+    for key in sorted(fallback_names, key=_param_name_sort_key):
+        values = _to_numpy(params.get(key))
+        if values.size:
+            series.append((key, values.reshape(-1)))
+
+    return series
+
+
 def _global_time_series(step):
     values = [p.get("global_time", idx) for idx, p in enumerate(step.get("data", []))]
     return np.asarray(values, dtype=float)
@@ -213,31 +291,33 @@ def _build_grid_search_table_and_chart(grid_search_history):
 def _build_epoch_summary_table_and_chart(data, meta):
     rows = []
     for step_data in data:
-        targets = _inverse_y(step_data.get("targets"), meta)
-        predictions = _inverse_y(step_data.get("predictions"), meta)
-        if targets.size and predictions.size:
-            if targets.ndim == 1:
-                targets = targets.reshape(-1, 1)
-            if predictions.ndim == 1:
-                predictions = predictions.reshape(-1, 1)
-            n_samples = min(targets.shape[0], predictions.shape[0])
-            n_horizons = min(targets.shape[1], predictions.shape[1])
-            targets_slice = np.squeeze(targets[:n_samples, :n_horizons])
-            predictions_slice = np.squeeze(predictions[:n_samples, :n_horizons])
-            mse = float(np.mean((predictions_slice - targets_slice) ** 2))
-        else:
-            mse = 0.0
+        mse = step_data.get("pred_mse")
+        if mse is None:
+            targets = _inverse_y(step_data.get("targets"), meta)
+            predictions = _inverse_y(step_data.get("predictions"), meta)
+            if targets.size and predictions.size:
+                if targets.ndim == 1:
+                    targets = targets.reshape(-1, 1)
+                if predictions.ndim == 1:
+                    predictions = predictions.reshape(-1, 1)
+                n_samples = min(targets.shape[0], predictions.shape[0])
+                n_horizons = min(targets.shape[1], predictions.shape[1])
+                targets_slice = np.squeeze(targets[:n_samples, :n_horizons])
+                predictions_slice = np.squeeze(predictions[:n_samples, :n_horizons])
+                mse = float(np.mean((predictions_slice - targets_slice) ** 2))
+            else:
+                mse = 0.0
+        mse = float(mse)
 
         model_losses = list(step_data.get("model_losses", {}).values())
-        generator_losses = list(step_data.get("generator_loss", {}).values())
         rows.append(
             {
                 "Epoch": step_data.get("step", len(rows)),
                 "Total time (s)": float(step_data.get("execution_time", 0.0)),
                 "Forecast time (s)": float(step_data.get("forecast_time", 0.0)),
                 "Generator time (s)": float(step_data.get("generator_time", 0.0)),
-                "Model loss": _safe_mean(model_losses),
-                "Generator loss": _safe_mean(generator_losses),
+                "Forecaster loss": _safe_mean(model_losses),
+                "Prediction MSE": mse,
             }
         )
 
@@ -250,7 +330,7 @@ def _build_epoch_summary_table_and_chart(data, meta):
     display_df = df.copy()
     for column in ["Total time (s)", "Forecast time (s)", "Generator time (s)"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.2f}s")
-    for column in ["Model loss", "Generator loss"]:
+    for column in ["Forecaster loss", "Prediction MSE"]:
         display_df[column] = display_df[column].map(lambda value: f"{float(value):.4f}")
 
     fig = make_subplots(
@@ -265,8 +345,8 @@ def _build_epoch_summary_table_and_chart(data, meta):
     fig.add_trace(go.Scatter(x=epochs, y=df["Total time (s)"], mode="lines+markers", name="total"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Forecast time (s)"], mode="lines+markers", name="forecast"), row=1, col=1)
     fig.add_trace(go.Scatter(x=epochs, y=df["Generator time (s)"], mode="lines+markers", name="generator"), row=1, col=1)
-    fig.add_trace(go.Scatter(x=epochs, y=df["Model loss"], mode="lines+markers", name="model loss"), row=2, col=1)
-    fig.add_trace(go.Scatter(x=epochs, y=df["Generator loss"], mode="lines+markers", name="generator loss"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Forecaster loss"], mode="lines+markers", name="forecaster loss"), row=2, col=1)
+    fig.add_trace(go.Scatter(x=epochs, y=df["Prediction MSE"], mode="lines+markers", name="prediction mse"), row=2, col=1)
 
     fig.update_xaxes(title_text="Epoch", row=2, col=1)
     fig.update_yaxes(title_text="Seconds", row=1, col=1)
@@ -291,32 +371,23 @@ def _build_params_exact_chart(data):
     )
 
     for row, step_data in enumerate(data, start=1):
-        params = step_data.get("params", {})
-        b0 = _to_numpy(params.get("b0"))
-        b1 = _to_numpy(params.get("b1"))
-        b2 = _to_numpy(params.get("b2"))
-        if b0.size == 0 and b1.size == 0 and b2.size == 0:
+        series = _extract_param_vectors(step_data)
+        if not series:
             continue
 
-        x0 = np.arange(len(b0))
-        x1 = np.arange(len(b1))
-        x2 = np.arange(len(b2))
-
-        fig.add_trace(
-            go.Scatter(x=x0, y=b0, mode="lines", name="b0", legendgroup="b0", showlegend=(row == 1)),
-            row=row,
-            col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=x1, y=b1, mode="lines", name="b1", legendgroup="b1", showlegend=(row == 1)),
-            row=row,
-            col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=x2, y=b2, mode="lines", name="b2", legendgroup="b2", showlegend=(row == 1)),
-            row=row,
-            col=1,
-        )
+        for name, values in series:
+            fig.add_trace(
+                go.Scatter(
+                    x=np.arange(len(values)),
+                    y=values,
+                    mode="lines",
+                    name=name,
+                    legendgroup=name,
+                    showlegend=(row == 1),
+                ),
+                row=row,
+                col=1,
+            )
 
         fig.update_yaxes(title_text=f"Step {step_data.get('step', row - 1)}", row=row, col=1)
 
@@ -338,14 +409,11 @@ def _build_params_heatmap_chart(data):
     param_rows = []
     epoch_labels = []
     for step_data in data:
-        params = step_data.get("params", {})
-        b0 = _to_numpy(params.get("b0"))
-        b1 = _to_numpy(params.get("b1"))
-        b2 = _to_numpy(params.get("b2"))
-        if b0.size == 0 and b1.size == 0 and b2.size == 0:
+        series = _extract_param_vectors(step_data)
+        if not series:
             continue
 
-        combined = np.concatenate([b0.reshape(-1), b1.reshape(-1), b2.reshape(-1)])
+        combined = np.concatenate([values.reshape(-1) for _, values in series])
         param_rows.append(combined)
         epoch_labels.append(step_data.get("step", len(epoch_labels)))
 
@@ -415,74 +483,56 @@ def _build_params_delta_line_chart(data):
         vertical_spacing=0.04,
     )
 
-    prev_b0 = None
-    prev_b1 = None
-    prev_b2 = None
+    previous = {}
 
     for row, step_data in enumerate(data, start=1):
-        params = step_data.get("params", {})
-        b0 = _to_numpy(params.get("b0"))
-        b1 = _to_numpy(params.get("b1"))
-        b2 = _to_numpy(params.get("b2"))
-
-        if b0.size == 0 and b1.size == 0 and b2.size == 0:
+        series = _extract_param_vectors(step_data)
+        if not series:
             continue
 
-        if prev_b0 is None:
-            p0 = np.zeros_like(b0)
-        else:
-            n0 = min(len(b0), len(prev_b0))
-            p0 = prev_b0[:n0]
-            b0 = b0[:n0]
-        if prev_b1 is None:
-            p1 = np.zeros_like(b1)
-        else:
-            n1 = min(len(b1), len(prev_b1))
-            p1 = prev_b1[:n1]
-            b1 = b1[:n1]
-        if prev_b2 is None:
-            p2 = np.zeros_like(b2)
-        else:
-            n2 = min(len(b2), len(prev_b2))
-            p2 = prev_b2[:n2]
-            b2 = b2[:n2]
+        current = {}
+        for name, values in series:
+            prev_values = previous.get(name)
 
-        if b0.size:
+            if prev_values is None:
+                prev_plot = np.zeros_like(values)
+                curr_plot = values
+            else:
+                n = min(len(values), len(prev_values))
+                curr_plot = values[:n]
+                prev_plot = prev_values[:n]
+
+            current[name] = values
             fig.add_trace(
-                go.Scatter(x=np.arange(len(b0)), y=b0, mode="lines", name="b0 current", legendgroup="b0", showlegend=(row == 1), line=dict(width=2)),
+                go.Scatter(
+                    x=np.arange(len(curr_plot)),
+                    y=curr_plot,
+                    mode="lines",
+                    name=f"{name} current",
+                    legendgroup=f"{name}_curr",
+                    showlegend=(row == 1),
+                    line=dict(width=2),
+                ),
                 row=row,
                 col=1,
             )
             fig.add_trace(
-                go.Scatter(x=np.arange(len(p0)), y=p0, mode="lines", name="b0 previous", legendgroup="b0prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
-                row=row,
-                col=1,
-            )
-        if b1.size:
-            fig.add_trace(
-                go.Scatter(x=np.arange(len(b1)), y=b1, mode="lines", name="b1 current", legendgroup="b1", showlegend=(row == 1), line=dict(width=2)),
-                row=row,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scatter(x=np.arange(len(p1)), y=p1, mode="lines", name="b1 previous", legendgroup="b1prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
-                row=row,
-                col=1,
-            )
-        if b2.size:
-            fig.add_trace(
-                go.Scatter(x=np.arange(len(b2)), y=b2, mode="lines", name="b2 current", legendgroup="b2", showlegend=(row == 1), line=dict(width=2)),
-                row=row,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scatter(x=np.arange(len(p2)), y=p2, mode="lines", name="b2 previous", legendgroup="b2prev", showlegend=(row == 1), line=dict(width=1, dash="dash"), opacity=0.7),
+                go.Scatter(
+                    x=np.arange(len(prev_plot)),
+                    y=prev_plot,
+                    mode="lines",
+                    name=f"{name} previous",
+                    legendgroup=f"{name}_prev",
+                    showlegend=(row == 1),
+                    line=dict(width=1, dash="dash"),
+                    opacity=0.7,
+                ),
                 row=row,
                 col=1,
             )
 
         fig.update_yaxes(title_text=f"Step {step_data.get('step', row - 1)}", row=row, col=1)
-        prev_b0, prev_b1, prev_b2 = b0, b1, b2
+        previous = current
 
     fig.update_xaxes(title_text="Parameter index", row=rows, col=1)
     fig.update_layout(
@@ -623,45 +673,42 @@ def _build_prediction_history_chart(data, meta):
 
 
 def _build_features_chart(last):
-    x1 = _feature_series(last, "x1")
-    x2 = _feature_series(last, "x2")
-
-    # Backward-compatible fix for older dashboard payloads where x1/x2 were
-    # logged from the wrong columns: x1 was hour index and x2 held the real x1.
-    if x1.size and x2.size:
-        x1_is_index_like = np.allclose(x1, np.round(x1), atol=1e-8) and (np.max(x1) - np.min(x1) >= 24)
-        x2_is_near_constant = np.std(x2) < 1e-6
-        if x1_is_index_like and x2_is_near_constant:
-            x1 = x2.copy()
+    matrix, names = _extract_feature_matrix(last)
+    if matrix.size == 0 or not names:
+        fig = go.Figure()
+        fig.update_layout(title="X Features - Full Range", height=500)
+        return fig
 
     t = _global_time_series(last)
     if t.size:
         t = t - np.min(t)
-    if len(t) != len(x1):
-        t = np.arange(len(x1))
+    if len(t) != len(matrix):
+        t = np.arange(len(matrix))
+
+    n_features = matrix.shape[1]
+    vertical_spacing = min(0.08, 0.9 / max(n_features - 1, 1))
 
     fig = make_subplots(
-        rows=2,
+        rows=n_features,
         cols=1,
-        subplot_titles=("x1 - Full Time Range", "x2 - Full Time Range"),
-        vertical_spacing=0.12,
+        subplot_titles=[f"{name} - Full Time Range" for name in names],
+        vertical_spacing=vertical_spacing,
     )
 
-    fig.add_trace(
-        go.Scatter(x=t, y=x1, mode="lines", name="x1"),
-        row=1,
-        col=1,
-    )
-    fig.add_trace(
-        go.Scatter(x=t, y=x2, mode="lines", name="x2"),
-        row=2,
-        col=1,
-    )
+    for i, name in enumerate(names, start=1):
+        fig.add_trace(
+            go.Scatter(x=t, y=matrix[:, i - 1], mode="lines", name=name, showlegend=(i == 1)),
+            row=i,
+            col=1,
+        )
+        fig.update_yaxes(title_text=name, row=i, col=1)
 
-    fig.update_xaxes(title_text="Time index", row=2, col=1)
-    fig.update_yaxes(title_text="x1", row=1, col=1)
-    fig.update_yaxes(title_text="x2", row=2, col=1)
-    fig.update_layout(title="X Features - Full Range", height=620, hovermode="x unified")
+    fig.update_xaxes(title_text="Time index", row=n_features, col=1)
+    fig.update_layout(
+        title="X Features - Full Range",
+        height=max(220 * n_features, 520),
+        hovermode="x unified",
+    )
     return fig
 
 

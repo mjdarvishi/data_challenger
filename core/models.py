@@ -8,11 +8,9 @@ from typing import Optional
 class DataPoint:
     global_time: int
     hour_of_week: int
-    x1: float
-    x2: float
+    x_values: list[float]
     b0_used: float
-    b1_used: float
-    b2_used: float
+    b_values: list[float]
     y: float
 
 
@@ -24,6 +22,7 @@ class StepRecord:
     generator_time: float
     model_losses: dict[int, float]
     generator_loss: dict[int, float]
+    pred_mse: float
     params: dict
     data: list[DataPoint]
     predictions: Optional[torch.Tensor]
