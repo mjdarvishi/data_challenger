@@ -3,6 +3,9 @@ from data_generator.generator_model import GeneratorModel
 from core.config import Config
 from training.forcast_trainer import ForecastTrainer
 import torch.nn.functional as F
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from training.pipeline import PipelineSplitResult
 
 
 class GeneratorTrainer:
@@ -16,7 +19,8 @@ class GeneratorTrainer:
     def fit(self, forcast_trainer: ForecastTrainer, build_normalize_splitet_func: callable) -> dict[int, float]:
         generator_loss: dict[int, float] = {}
         for step in range(self.config.generator_epoch):
-            X_train, Y_train, _, _ ,_,_= build_normalize_splitet_func()
+            split: "PipelineSplitResult"= build_normalize_splitet_func()
+            X_train, Y_train = split.X_train, split.Y_train
             Y_pred = forcast_trainer.model.forward(X_train)
             loss: torch.Tensor =  forcast_trainer.criterion(Y_pred, Y_train)
             

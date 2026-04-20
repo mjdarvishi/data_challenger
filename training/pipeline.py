@@ -84,6 +84,7 @@
 # ============================================================
 
 
+from dataclasses import dataclass
 from unicodedata import name
 
 from data_generator.x_feature_registery import XFeatureRegistery
@@ -99,6 +100,18 @@ import torch
 from forcast_model.grid_search import GridSearchEngine
 from training.pipline_tracker import PipelineTracker
 from time import perf_counter
+
+
+@dataclass
+class PipelineSplitResult:
+    X_train: torch.Tensor
+    Y_train: torch.Tensor
+    X_val: torch.Tensor
+    Y_val: torch.Tensor
+    X_test: torch.Tensor
+    Y_test: torch.Tensor
+    X_raw: torch.Tensor
+    Y_raw: torch.Tensor
 
 
 class BasePipeline:
@@ -130,14 +143,14 @@ class BasePipeline:
         self,
         X_train: torch.Tensor,
         Y_train: torch.Tensor,
-        X_test: torch.Tensor,
-        Y_test: torch.Tensor,
+        X_val: torch.Tensor,
+        Y_val: torch.Tensor,
     ):
         best_model, best_score, best_params, grid_df = self.grid_search_engine.search(
             X_train,
             Y_train,
-            X_test,
-            Y_test,
+            X_val,
+            Y_val,
         )
         self.forcast_trainer = ForecastTrainer(best_model)
         self.tracker.log_grid_search(
@@ -147,55 +160,71 @@ class BasePipeline:
         )
         return best_model, best_score
 
-    def _build_normalize_splitet(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _build_normalize_splitet(
+        self,
+    ) -> PipelineSplitResult:
         X_raw, Y_raw = self.dataset_builder.build(
                     self.x_registery,
                     self.gen_model,
                     n_samples=self.config.total_samples(),
                 )
+        split = self.splitter.split_train_val_test(X_raw, Y_raw)
+
         # =========================
         # 2. NORMALIZE
         # =========================
-        self.normalizer.fit(X_raw, Y_raw)
+        self.normalizer.fit_on_train(split.X_train, split.Y_train)
         self.tracker.meta = {
             "Y_mean": float(self.normalizer.Y_mean.item()),
             "Y_std": float(self.normalizer.Y_std.item()),
         }
-        X, Y = self.normalizer.transform(X_raw, Y_raw)
+
+        X_train_norm, Y_train_norm = self.normalizer.transform(split.X_train, split.Y_train)
+        X_val_norm, Y_val_norm = self.normalizer.transform(split.X_val, split.Y_val)
+        X_test_norm, Y_test_norm = self.normalizer.transform(split.X_test, split.Y_test)
 
         # =========================
         # 3. SEQUENCE BUILD
         # =========================
-        X_seq, Y_seq = self.sequence_builder.build(X, Y)
-
-        # =========================
-        # 4. SPLIT
-        # =========================
-        X_train, Y_train, X_test, Y_test = self.splitter.split(X_seq, Y_seq)
+        X_train, Y_train = self.sequence_builder.build(X_train_norm, Y_train_norm)
+        X_val, Y_val = self.sequence_builder.build(X_val_norm, Y_val_norm)
+        X_test, Y_test = self.sequence_builder.build(X_test_norm, Y_test_norm)
 
         X_train, Y_train = X_train.to(self.device), Y_train.to(self.device)
+        X_val, Y_val = X_val.to(self.device), Y_val.to(self.device)
         X_test, Y_test = X_test.to(self.device), Y_test.to(self.device)
 
-        return X_train, Y_train, X_test, Y_test, X_raw, Y_raw
+        return PipelineSplitResult(
+            X_train=X_train,
+            Y_train=Y_train,
+            X_val=X_val,
+            Y_val=Y_val,
+            X_test=X_test,
+            Y_test=Y_test,
+            X_raw=X_raw,
+            Y_raw=Y_raw,
+        )
 
     def run_step(self, epoch_num: int):
         step_start = perf_counter()
 
         # 2. normalize, sequence build, split
-        X_train, Y_train, X_test, Y_test, X_raw, Y_raw = self._build_normalize_splitet()
+        split = self._build_normalize_splitet()
         # =========================
         # 1. TRAIN MODEL
         # =========================
         # Detach Y to prevent gradient flow into generator during model training.
         # Ensures only the forecast model (θ) is updated in this step.
         forecast_start = perf_counter()
-        model_losses = self.forcast_trainer.fit(X_train,  Y_train.detach())
+        model_losses = self.forcast_trainer.fit(split.X_train, split.Y_train.detach())
         self.forcast_trainer.model.eval_mode()
 
-         # =========================
+        # =========================
         # 9. EVALUATION
         # =========================
-        pred, mse = self.forcast_trainer.evaluate_pred_mse(X_test, Y_test)
+        _, train_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_train, split.Y_train)
+        _, val_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_val, split.Y_val)
+        pred, test_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_test, split.Y_test)
         forecast_time = perf_counter() - forecast_start
         # =========================
         # 6. FREEZE MODEL
@@ -230,25 +259,30 @@ class BasePipeline:
             generator_time=generator_time,
             model_losses=model_losses,
             generator_loss=generator_loss,
-            pred_mse=mse,
+            pred_mse=test_eval_mse,
+            train_eval_mse=train_eval_mse,
+            val_eval_mse=val_eval_mse,
+            test_eval_mse=test_eval_mse,
             gen_model=self.gen_model,
-            X_raw=X_raw.detach().cpu(),
-            Y_raw=Y_raw.detach().cpu(),
+            X_raw=split.X_raw.detach().cpu(),
+            Y_raw=split.Y_raw.detach().cpu(),
             predictions = pred.detach().cpu().clone() ,
-            targets = Y_test.detach().cpu().clone()
+            targets = split.Y_test.detach().cpu().clone()
         )
         print(
             f"Epoch {epoch_num} | total: {perf_counter() - step_start:.2f}s | "
             f"forecast: {forecast_time:.2f}s | generator: {generator_time:.2f}s | "
-            f"Model MSE: {mse:.4f} "
+            f"train MSE(eval): {train_eval_mse:.4f} | "
+            f"val MSE(eval): {val_eval_mse:.4f} | "
+            f"test MSE(eval): {test_eval_mse:.4f}"
         )
 
     def run(self):
 
         # 2. normalize, sequence build, split
-        X_train, Y_train, X_test, Y_test, _ , _ = self._build_normalize_splitet()
+        split = self._build_normalize_splitet()
         # 5. find best model
-        self.select_best_model(X_train, Y_train, X_test, Y_test)
+        self.select_best_model(split.X_train, split.Y_train, split.X_val, split.Y_val)
 
         # 6. adversarial training loop
         for epoch in range(self.config.training_epochs):

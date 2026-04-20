@@ -14,7 +14,7 @@ class GridSearchEngine:
         self.config = Config()
         self.model_fixed_kwargs = model_fixed_kwargs or {}
 
-    def search(self, X_train, Y_train, X_test, Y_test)-> Tuple[BaseForecastModel, float, dict, pd.DataFrame]:
+    def search(self, X_train, Y_train, X_val, Y_val)-> Tuple[BaseForecastModel, float, dict, pd.DataFrame]:
 
         grid = self.model_class.search_space()
 
@@ -54,7 +54,7 @@ class GridSearchEngine:
             # =========================
             # 4. evaluate
             # =========================
-            _, score = trainer.evaluate_pred_mse(X_test, Y_test)
+            _, score = trainer.evaluate_pred_mse(X_val, Y_val)
 
             results.append({**model_params, "mse": score})
             print(f"GRID SEARCH Tested params: {model_params}, MSE: {score:.4f}")

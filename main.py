@@ -1,4 +1,4 @@
-from core.config import Config, XFeature
+from core.config import Config, SplitMode, XFeature
 
 from forcast_model.base_forcast_model import BaseForecastModel
 from forcast_model.grid_search import GridSearchEngine
@@ -9,11 +9,13 @@ from forcast_model.dlinear import DLinearForcaster
 from forcast_model.nlinear import NLinearForcaster
 from data_generator.x_feature_registery import XFeatureRegistery
 from data_generator.generator_model import GeneratorModel
-from core.setup import setup_models
-from utils import cal_input_dimenion
 
-def main(features: list[XFeature],forcaster_cls: type[BaseForecastModel]):
+def main(
+    features: list[XFeature],
+    forcaster_cls: type[BaseForecastModel],
+):
     # setup_models()
+
     x_registery = XFeatureRegistery()
     features_str = "_".join([f.name for f in features])
     x_registery.select_generators(features)
@@ -36,6 +38,13 @@ def main(features: list[XFeature],forcaster_cls: type[BaseForecastModel]):
     pipe.tracker.export(name=pipe.name)
 
 if __name__ == "__main__":
-    main([XFeature.X9, XFeature.X5, XFeature.X1, XFeature.X2, XFeature.X3, XFeature.X4,XFeature.X11], ITransformerForcaster)
+    # main(
+    #     [XFeature.X9, XFeature.X5, XFeature.X1, XFeature.X2, XFeature.X3, XFeature.X4, XFeature.X11],
+    #     ITransformerForcaster,
+    # )
+    main(
+        [ XFeature.X5, XFeature.X2],
+        DLinearForcaster,
+    )
     # main([XFeature.X7, XFeature.X5], NLinearForcaster)
     # main([XFeature.X5, XFeature.X4], AutoformerForcaster)

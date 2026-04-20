@@ -77,6 +77,10 @@ class ForecastTrainer:
             mse = self.criterion(preds, target).item()
 
         return preds, mse
+
+    def evaluate_mse(self, X: torch.Tensor, Y: torch.Tensor) -> float:
+        _, mse = self.evaluate_pred_mse(X, Y)
+        return mse
     
     
     

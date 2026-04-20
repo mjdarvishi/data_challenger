@@ -15,11 +15,20 @@ class DataNormalizer:
         self.Y_mean = Y.mean()
         self.Y_std = Y.std() + 1e-6
 
+    def fit_on_train(self, X_train: torch.Tensor, Y_train: torch.Tensor):
+        self.fit(X_train, Y_train)
+
+    def transform_X(self, X: torch.Tensor) -> torch.Tensor:
+        return (X - self.X_mean) / self.X_std
+
+    def transform_Y(self, Y: torch.Tensor) -> torch.Tensor:
+        return (Y - self.Y_mean) / self.Y_std
+
     def transform(
         self, X: torch.Tensor, Y: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        X_norm = (X - self.X_mean) / self.X_std
-        Y_norm = (Y - self.Y_mean) / self.Y_std
+        X_norm = self.transform_X(X)
+        Y_norm = self.transform_Y(Y)
         return X_norm, Y_norm
 
     def inverse_Y(self, Y_norm: torch.Tensor) -> torch.Tensor:

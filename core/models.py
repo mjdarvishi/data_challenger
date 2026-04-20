@@ -27,3 +27,6 @@ class StepRecord:
     data: list[DataPoint]
     predictions: Optional[torch.Tensor]
     targets: torch.Tensor
+    train_eval_mse: Optional[float] = None
+    val_eval_mse: Optional[float] = None
+    test_eval_mse: Optional[float] = None

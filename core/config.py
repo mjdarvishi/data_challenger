@@ -17,6 +17,12 @@ class XFeature(Enum):
     X11 = "x11"
 
 
+class SplitMode(Enum):
+    CHRONOLOGICAL = "chronological"
+    RANDOM_WINDOW = "random_window"
+    WEEKLY_BLOCK = "weekly_block"
+
+
 class Config:
     
     debug: bool = True
@@ -27,6 +33,10 @@ class Config:
     seq_len: int = 24
     pred_len: int = 6
     train_ratio: float = 0.8
+    val_ratio: float = 0.1
+    split_mode: SplitMode = SplitMode.WEEKLY_BLOCK
+    split_seed: int = 42
+    random_window_size: int = 168
     batch_size: int = 32
     noise_dim: int = 16
     init_b0_min = -5.0
@@ -77,6 +87,10 @@ class Config:
             "seq_len": Config.seq_len,
             "pred_len": Config.pred_len,
             "train_ratio": Config.train_ratio,
+            "val_ratio": Config.val_ratio,
+            "split_mode": Config.split_mode.value,
+            "split_seed": Config.split_seed,
+            "random_window_size": Config.random_window_size,
             "batch_size": Config.batch_size,
             "noise_dim": Config.noise_dim,
             "init_b0_min": Config.init_b0_min,
