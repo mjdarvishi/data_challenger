@@ -21,7 +21,6 @@ class TimeSeriesSplitter:
         self.val_ratio = self.config.val_ratio
         self.split_mode = self.config.split_mode
         self.split_seed = self.config.split_seed
-        self.random_window_size = self.config.random_window_size
 
     def split(self, X: torch.Tensor, Y: torch.Tensor):
         return self.split_train_val_test(X, Y)
@@ -36,11 +35,6 @@ class TimeSeriesSplitter:
 
         if self.split_mode == SplitMode.CHRONOLOGICAL:
             idx_train, idx_val, idx_test = self._chronological_indices(n)
-        elif self.split_mode == SplitMode.RANDOM_WINDOW:
-            idx_train, idx_val, idx_test = self._blockwise_random_indices(
-                n=n,
-                block_size=self.random_window_size,
-            )
         elif self.split_mode == SplitMode.WEEKLY_BLOCK:
             idx_train, idx_val, idx_test = self._blockwise_random_indices(
                 n=n,
