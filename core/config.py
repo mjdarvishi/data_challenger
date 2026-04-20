@@ -16,6 +16,7 @@ class XFeature(Enum):
     X10 = "x10"
     X11 = "x11"
     X12 = "x12"
+    X13 = "x13"
 
 
 class SplitMode(Enum):

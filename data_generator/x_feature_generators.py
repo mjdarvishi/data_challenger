@@ -719,4 +719,78 @@ class NonlinearCompositeGenerator(XFeatureGenerator):
             device=t_tensor.device,
             dtype=torch.float,
         )
+
+
+class RegimePulseTrendGenerator(XFeatureGenerator):
+    """
+    X13: Abrupt regime-shift signal with intra-week ramp and periodic pulses.
+
+    Formula
+    -------
+    X13(t) = baseline + step(t) + ramp(t) + pulse(t) + eps_t
+
+    where:
+        step(t)  = -step_height before the midpoint, +step_height after it
+        ramp(t)  = weekly ramp that resets every week
+        pulse(t) = narrow Gaussian pulse repeated each week
+        eps_t    = Gaussian noise
+
+    This generator intentionally creates a non-sinusoidal pattern so the
+    target Y can show sharper transitions and localized spikes when it is selected.
+    """
+
+    def __init__(
+        self,
+        name: str = "X13",
+        baseline: float = 0.0,
+        step_height: float = 3.0,
+        ramp_height: float = 2.0,
+        pulse_height: float = 4.0,
+        pulse_width: float = 10.0,
+        noise_std: float = 0.15,
+    ):
+        super().__init__(name)
+        self.baseline = baseline
+        self.step_height = step_height
+        self.ramp_height = ramp_height
+        self.pulse_height = pulse_height
+        self.pulse_width = pulse_width
+        self.noise_std = noise_std
+        self.hours_per_week = Config.hours_per_week()
+        self.total_samples = max(1, Config.total_samples() - 1)
+
+    def _core(self, t_values: np.ndarray) -> np.ndarray:
+        t = t_values.astype(float)
+        midpoint = self.total_samples / 2.0
+
+        step = np.where(t < midpoint, -self.step_height, self.step_height)
+        weekly_phase = np.mod(t, self.hours_per_week) / max(1.0, self.hours_per_week - 1.0)
+        ramp = self.ramp_height * (2.0 * weekly_phase - 1.0)
+
+        pulse_center = 0.75 * self.hours_per_week
+        pulse = self.pulse_height * np.exp(
+            -0.5
+            * np.square(
+                (np.mod(t, self.hours_per_week) - pulse_center) / self.pulse_width
+            )
+        )
+
+        return self.baseline + step + ramp + pulse
+
+    def generate(self, t: int) -> float:
+        base = self._core(np.array([t], dtype=float))[0]
+        noise = np.random.normal(0.0, self.noise_std)
+        return float(base + noise)
+
+    def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
+        base = self._core(t_values)
+        noise = np.random.normal(0.0, self.noise_std, size=t_values.shape[0])
+        return base + noise
+
+    def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
+        return torch.tensor(
+            self.generate_numpy(t_tensor.detach().cpu().numpy()),
+            device=t_tensor.device,
+            dtype=torch.float,
+        )
     

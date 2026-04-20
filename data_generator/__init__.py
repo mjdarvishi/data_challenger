@@ -11,6 +11,7 @@ from .x_feature_generators import (
     SparseSpikeGenerator,
     NonlinearCompositeGenerator,
     StructuralPhaseGenerator,
+    RegimePulseTrendGenerator,
     
     
 )
@@ -28,4 +29,5 @@ __all__ = [
     "SparseSpikeGenerator",
     "NonlinearCompositeGenerator",
     "StructuralPhaseGenerator",
+    "RegimePulseTrendGenerator",
 ]

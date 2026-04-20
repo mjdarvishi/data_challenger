@@ -43,7 +43,7 @@ if __name__ == "__main__":
     #     ITransformerForcaster,
     # )
     main(
-        [XFeature.X12,XFeature.X1],
+        [XFeature.X11,XFeature.X13],
         ITransformerForcaster,
     )
     # main([XFeature.X7, XFeature.X5], NLinearForcaster)

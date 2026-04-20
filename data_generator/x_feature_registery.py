@@ -13,6 +13,7 @@ from data_generator import (
     SparseSpikeGenerator,
     NonlinearCompositeGenerator,
     StructuralPhaseGenerator,
+    RegimePulseTrendGenerator,
 )
 from data_generator.x_feature_generators import XFeatureGenerator
 from core.config import Config, XFeature
@@ -88,6 +89,10 @@ class XFeatureRegistery:
             alpha=Config.structural_alpha,
             delta=Config.structural_delta,
             noise_std=Config.noise_std,
+        )
+        self.generator_registry[XFeature.X13] = RegimePulseTrendGenerator(
+            name=XFeature.X13.value,
+            noise_std=Config.noise_std * 0.5,
         )
         
         
