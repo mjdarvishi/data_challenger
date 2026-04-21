@@ -1,8 +1,5 @@
 from enum import Enum
 
-from utils import cal_input_dimenion
-
-
 class XFeature(Enum):
     X1 = "x1"
     X2 = "x2"
@@ -59,6 +56,7 @@ class Config:
     
     @staticmethod
     def set_input_dim( features: list[XFeature]):
+        from utils import cal_input_dimenion
         Config.input_dim = cal_input_dimenion(features)
 
 
