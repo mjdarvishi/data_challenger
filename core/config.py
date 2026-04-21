@@ -56,8 +56,9 @@ class Config:
     
     @staticmethod
     def set_input_dim( features: list[XFeature]):
-        from utils import cal_input_dimenion
-        Config.input_dim = cal_input_dimenion(features)
+        num_features = len(features)
+        # Layout: [hour_idx, x1..xN]
+        return 1 + num_features
 
 
     noise_std: float = 2
