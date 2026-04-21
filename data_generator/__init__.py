@@ -12,6 +12,7 @@ from .x_feature_generators import (
     NonlinearCompositeGenerator,
     StructuralPhaseGenerator,
     RegimePulseTrendGenerator,
+    ChaoticAdversarialGenerator,
     
     
 )
@@ -30,4 +31,5 @@ __all__ = [
     "NonlinearCompositeGenerator",
     "StructuralPhaseGenerator",
     "RegimePulseTrendGenerator",
+    "ChaoticAdversarialGenerator",
 ]

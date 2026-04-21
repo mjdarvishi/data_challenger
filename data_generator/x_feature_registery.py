@@ -14,6 +14,7 @@ from data_generator import (
     NonlinearCompositeGenerator,
     StructuralPhaseGenerator,
     RegimePulseTrendGenerator,
+    ChaoticAdversarialGenerator,
 )
 from data_generator.x_feature_generators import XFeatureGenerator
 from core.config import Config, XFeature
@@ -93,6 +94,11 @@ class XFeatureRegistery:
         self.generator_registry[XFeature.X13] = RegimePulseTrendGenerator(
             name=XFeature.X13.value,
             noise_std=Config.noise_std * 0.5,
+        )
+        self.generator_registry[XFeature.X14] = ChaoticAdversarialGenerator(
+            name=XFeature.X14.value,
+            base_noise_std=Config.noise_std * 0.12,
+            shock_noise_scale=Config.noise_std * 0.25,
         )
         
         

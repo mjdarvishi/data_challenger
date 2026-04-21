@@ -793,4 +793,120 @@ class RegimePulseTrendGenerator(XFeatureGenerator):
             device=t_tensor.device,
             dtype=torch.float,
         )
+
+
+class ChaoticAdversarialGenerator(XFeatureGenerator):
+    """
+    X14: Hard non-stationary signal with switching dynamics.
+
+    Designed to be difficult for sequence forecasters by combining:
+    - piecewise regimes with different frequencies/trends
+    - threshold nonlinearity and delayed weekly memory
+    - heteroscedastic heavy-tailed noise
+    - optional context interaction with x11 and x13
+    """
+
+    def __init__(
+        self,
+        name: str = "X14",
+        memory_gamma: float = 0.55,
+        threshold: float = 1.2,
+        base_noise_std: float = 0.18,
+        shock_noise_scale: float = 0.45,
+        context_mix: float = 0.35,
+    ):
+        super().__init__(name)
+        self.memory_gamma = memory_gamma
+        self.threshold = threshold
+        self.base_noise_std = base_noise_std
+        self.shock_noise_scale = shock_noise_scale
+        self.context_mix = context_mix
+        self.hours_per_week = Config.hours_per_week()
+        self.total = max(1, Config.total_samples() - 1)
+
+    def _core_no_context(self, t_values: np.ndarray) -> np.ndarray:
+        t = t_values.astype(float)
+        n = t.shape[0]
+        if n == 0:
+            return np.array([], dtype=float)
+
+        thirds_1 = n // 3
+        thirds_2 = (2 * n) // 3
+
+        p_day = Config.hours_per_day
+        p_week = self.hours_per_week
+        p_year = Config.total_samples()
+
+        s_fast = np.sin(2 * np.pi * t / p_day)
+        s_week = np.sin(2 * np.pi * t / p_week)
+        s_year = np.sin(2 * np.pi * t / p_year)
+        trend = 2.0 * (t / self.total) - 1.0
+
+        base = np.zeros(n, dtype=float)
+
+        # Regime A: smooth periodic structure.
+        base[:thirds_1] = 1.4 * s_fast[:thirds_1] + 0.7 * s_week[:thirds_1]
+
+        # Regime B: nonlinear threshold plus trend drift.
+        mid_part = 1.1 * s_week[thirds_1:thirds_2] + 1.0 * trend[thirds_1:thirds_2]
+        base[thirds_1:thirds_2] = np.where(
+            np.abs(mid_part) > self.threshold,
+            np.sign(mid_part) * np.square(np.abs(mid_part)),
+            mid_part,
+        )
+
+        # Regime C: mixed frequencies with saturating nonlinearity.
+        tail = (
+            0.6 * s_year[thirds_2:]
+            + 1.0 * s_fast[thirds_2:]
+            + 0.8 * np.tanh(3.0 * trend[thirds_2:])
+        )
+        base[thirds_2:] = tail
+
+        # Weekly memory recursion to increase temporal dependence.
+        out = np.zeros(n, dtype=float)
+        for i in range(n):
+            lag = out[i - p_week] if i >= p_week else 0.0
+            out[i] = base[i] + self.memory_gamma * lag
+
+        # Heteroscedastic + heavy-tailed noise: larger variance during shocks.
+        local_scale = self.base_noise_std * (1.0 + 0.9 * np.abs(np.sin(2 * np.pi * t / p_week)))
+        gauss = np.random.normal(0.0, local_scale, size=n)
+        student = np.random.standard_t(df=3, size=n) * self.shock_noise_scale
+        shock_gate = (np.mod(t, p_week) > 0.72 * p_week).astype(float)
+
+        return out + gauss + shock_gate * student
+
+    def generate(self, t: int) -> float:
+        base = self._core_no_context(np.array([t], dtype=float))[0]
+        return float(base)
+
+    def generate_numpy(self, t_values: np.ndarray) -> np.ndarray:
+        return self._core_no_context(t_values)
+
+    def generate_numpy_with_context(
+        self,
+        t_values: np.ndarray,
+        context: Dict[str, np.ndarray],
+    ) -> np.ndarray:
+        base = self._core_no_context(t_values)
+
+        x11 = context.get("x11")
+        x13 = context.get("x13")
+        if x11 is None or x13 is None:
+            return base
+
+        n = min(base.shape[0], x11.shape[0], x13.shape[0])
+        out = base.copy()
+
+        interaction = np.tanh(x11[:n]) * np.sign(x13[:n]) * np.sqrt(np.abs(x13[:n]) + 1e-6)
+        out[:n] = out[:n] + self.context_mix * interaction
+        return out
+
+    def generate_torch(self, t_tensor: torch.Tensor) -> torch.Tensor:
+        return torch.tensor(
+            self.generate_numpy(t_tensor.detach().cpu().numpy()),
+            device=t_tensor.device,
+            dtype=torch.float,
+        )
     

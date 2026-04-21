@@ -13,8 +13,6 @@ class PipelineTracker:
         self.history: list[StepRecord] = []
         self.grid_search_history = []
         self.output_dir = self.get_output_dir()
-
-        self.meta = {}
     def log_step(
         self,
         step: int,
@@ -32,6 +30,8 @@ class PipelineTracker:
         Y_raw: torch.Tensor,
         predictions: torch.Tensor = None,
         targets: torch.Tensor = None,
+        y_mean: float | None = None,
+        y_std: float | None = None,
     ):
         # Extract parameters
         b0 = gen_model.b0.detach().cpu().clone()
@@ -86,6 +86,8 @@ class PipelineTracker:
             data=data_points,
             predictions=predictions,
             targets=targets,
+            y_mean=float(y_mean) if y_mean is not None else None,
+            y_std=float(y_std) if y_std is not None else None,
         )
 
         self.history.append(record)
@@ -166,6 +168,8 @@ class PipelineTracker:
                 "params": convert(record.params),
                 "predictions": convert(record.predictions),
                 "targets": convert(record.targets),
+                "Y_mean": float(record.y_mean) if record.y_mean is not None else None,
+                "Y_std": float(record.y_std) if record.y_std is not None else None,
                 "data": [
                     {
                         "global_time": d.global_time,
@@ -185,7 +189,6 @@ class PipelineTracker:
             })
 
         payload = {
-            "meta": convert(self.meta),
             "records": data,
             "grid_search_history": convert(self.grid_search_history),
             "config": Config.to_dict(),

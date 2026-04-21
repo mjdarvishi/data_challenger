@@ -174,10 +174,6 @@ class BasePipeline:
         # 2. NORMALIZE
         # =========================
         self.normalizer.fit_on_train(split.X_train, split.Y_train)
-        self.tracker.meta = {
-            "Y_mean": float(self.normalizer.Y_mean.item()),
-            "Y_std": float(self.normalizer.Y_std.item()),
-        }
 
         X_train_norm, Y_train_norm = self.normalizer.transform(split.X_train, split.Y_train)
         X_val_norm, Y_val_norm = self.normalizer.transform(split.X_val, split.Y_val)
@@ -244,6 +240,7 @@ class BasePipeline:
 
         # self._debug(step)
         generator_time = perf_counter() - generator_start
+        
         # =========================
         # 8. UNFREEZE MODEL
         # =========================
@@ -267,7 +264,9 @@ class BasePipeline:
             X_raw=split.X_raw.detach().cpu(),
             Y_raw=split.Y_raw.detach().cpu(),
             predictions = pred.detach().cpu().clone() ,
-            targets = split.Y_test.detach().cpu().clone()
+            targets = split.Y_test.detach().cpu().clone(),
+            y_mean=float(self.normalizer.Y_mean.item()),
+            y_std=float(self.normalizer.Y_std.item()),
         )
         print(
             f"Epoch {epoch_num} | total: {perf_counter() - step_start:.2f}s | "
@@ -285,7 +284,7 @@ class BasePipeline:
         self.select_best_model(split.X_train, split.Y_train, split.X_val, split.Y_val)
 
         # 6. adversarial training loop
-        for epoch in range(self.config.training_epochs):
+        for epoch in range(self.config.adversarial_epochs):
             self.run_step(epoch)
     
     

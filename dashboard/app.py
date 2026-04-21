@@ -22,10 +22,10 @@ def _load_data(path: str = "output/dashboard_data.json"):
         with open(path, "r") as f:
             payload = json.load(f)
             if isinstance(payload, dict):
-                return payload.get("records", []), payload.get("meta", {}), payload.get("grid_search_history", []), payload.get("config", {})
-            return payload, {}, [], {}
+                return payload.get("records", []), payload.get("grid_search_history", []), payload.get("config", {})
+            return payload, [], {}
     except FileNotFoundError:
-        return [], {}, [], {}
+        return [], [], {}
 
 
 def _list_output_sources(output_dir: str = "output"):
@@ -61,12 +61,12 @@ def _to_numpy(values):
     return arr.astype(float)
 
 
-def _inverse_y(values, meta):
+def _inverse_y(values, step_data):
     arr = _to_numpy(values)
     if arr.size == 0:
         return arr
-    y_mean = float(meta.get("Y_mean", 0.0))
-    y_std = float(meta.get("Y_std", 1.0))
+    y_mean = float(step_data.get("Y_mean", 0.0))
+    y_std = float(step_data.get("Y_std", 1.0))
     return arr * y_std + y_mean
 
 
@@ -288,7 +288,7 @@ def _build_grid_search_table_and_chart(grid_search_history):
     return summary + _html_table(display_df, "No grid search results found."), fig
 
 
-def _build_epoch_summary_table_and_chart(data, meta):
+def _build_epoch_summary_table_and_chart(data):
     rows = []
     for step_data in data:
         train_mse = step_data.get("train_eval_mse", 0.0)
@@ -349,12 +349,13 @@ def _build_params_exact_chart(data):
         return fig
 
     rows = len(data)
+    vertical_spacing = min(0.04, 0.18 / max(rows - 1, 1))
     fig = make_subplots(
         rows=rows,
         cols=1,
         shared_xaxes=False,
         subplot_titles=[f"Epoch {step_data.get('step', idx)}" for idx, step_data in enumerate(data)],
-        vertical_spacing=0.04,
+        vertical_spacing=vertical_spacing,
     )
 
     for row, step_data in enumerate(data, start=1):
@@ -462,12 +463,13 @@ def _build_params_delta_line_chart(data):
         return fig
 
     rows = len(data)
+    vertical_spacing = min(0.04, 0.18 / max(rows - 1, 1))
     fig = make_subplots(
         rows=rows,
         cols=1,
         shared_xaxes=False,
         subplot_titles=[f"Epoch {step_data.get('step', idx)} vs previous" for idx, step_data in enumerate(data)],
-        vertical_spacing=0.04,
+        vertical_spacing=vertical_spacing,
     )
 
     previous = {}
@@ -530,9 +532,9 @@ def _build_params_delta_line_chart(data):
     return fig
 
 
-def _build_prediction_chart(last, meta):
-    targets = np.squeeze(_inverse_y(last.get("targets"), meta))
-    predictions = np.squeeze(_inverse_y(last.get("predictions"), meta))
+def _build_prediction_chart(last):
+    targets = np.squeeze(_inverse_y(last.get("targets"), last))
+    predictions = np.squeeze(_inverse_y(last.get("predictions"), last))
 
     if targets.size == 0 or predictions.size == 0:
         fig = go.Figure()
@@ -594,24 +596,33 @@ def _build_prediction_chart(last, meta):
     return fig
 
 
-def _build_prediction_history_chart(data, meta):
+def _build_prediction_history_chart(data):
     if not data:
         fig = go.Figure()
         fig.update_layout(title="Prediction vs Ground Truth over Epochs", height=500)
         return fig
 
     rows = len(data)
+    subplot_titles = []
+    for idx, step_data in enumerate(data):
+        label_epoch = step_data.get("step", idx)
+        mse_test = step_data.get("test_eval_mse")
+        if mse_test is None:
+            subplot_titles.append(f"Epoch {label_epoch}")
+        else:
+            subplot_titles.append(f"Epoch {label_epoch} | test MSE={float(mse_test):.4f}")
+
     fig = make_subplots(
         rows=rows,
         cols=1,
         shared_xaxes=False,
-        subplot_titles=[f"Epoch {step_data.get('step', idx)}" for idx, step_data in enumerate(data)],
-        vertical_spacing=0.04,
+        subplot_titles=subplot_titles,
+        vertical_spacing=min(0.04, 0.18 / max(rows - 1, 1)),
     )
 
     for row, step_data in enumerate(data, start=1):
-        targets = np.squeeze(_inverse_y(step_data.get("targets"), meta))
-        predictions = np.squeeze(_inverse_y(step_data.get("predictions"), meta))
+        targets = np.squeeze(_to_numpy(step_data.get("targets")))
+        predictions = np.squeeze(_to_numpy(step_data.get("predictions")))
 
         if targets.size == 0 or predictions.size == 0:
             continue
@@ -626,10 +637,16 @@ def _build_prediction_history_chart(data, meta):
         targets = targets[:n_samples, :n_horizons]
         predictions = predictions[:n_samples, :n_horizons]
 
+        # Group by horizon so each contiguous area represents one prediction step.
+        targets_plot = np.concatenate([targets[:, h] for h in range(n_horizons)])
+        predictions_plot = np.concatenate([predictions[:, h] for h in range(n_horizons)])
+
+        x = np.arange(targets_plot.shape[0])
+
         fig.add_trace(
             go.Scatter(
-                x=np.arange(n_samples),
-                y=targets[:, 0],
+                x=x,
+                y=targets_plot,
                 mode="lines",
                 name="target",
                 legendgroup="target",
@@ -641,8 +658,8 @@ def _build_prediction_history_chart(data, meta):
         )
         fig.add_trace(
             go.Scatter(
-                x=np.arange(n_samples),
-                y=predictions[:, 0],
+                x=x,
+                y=predictions_plot,
                 mode="lines",
                 name="prediction",
                 legendgroup="prediction",
@@ -652,10 +669,31 @@ def _build_prediction_history_chart(data, meta):
             row=row,
             col=1,
         )
-        fig.update_yaxes(title_text=f"Step {step_data.get('step', row - 1)}", row=row, col=1)
 
-    fig.update_xaxes(title_text="Sample index", row=rows, col=1)
-    fig.update_layout(title="Prediction vs Ground Truth over Epochs", height=max(250 * rows, 520), hovermode="x unified")
+        # Add shaded bands so users can see which region corresponds to each prediction step.
+        for h in range(n_horizons):
+            x0 = h * n_samples
+            x1 = (h + 1) * n_samples
+            band_color = "rgba(99, 102, 241, 0.05)" if h % 2 == 0 else "rgba(14, 165, 233, 0.05)"
+            fig.add_vrect(
+                x0=x0,
+                x1=x1,
+                fillcolor=band_color,
+                line_width=0,
+                row=row,
+                col=1,
+                annotation_text=f"Pred {h + 1}",
+                annotation_position="top left",
+            )
+
+        fig.update_yaxes(title_text=f"Epoch {step_data.get('step', row - 1)}", row=row, col=1)
+
+    fig.update_xaxes(title_text="Grouped index by prediction step", row=rows, col=1)
+    fig.update_layout(
+        title="Prediction vs Ground Truth over Epochs (Normalized, All Horizons, Grouped by Step)",
+        height=max(250 * rows, 520),
+        hovermode="x unified",
+    )
     return fig
 
 
@@ -673,7 +711,7 @@ def _build_features_chart(last):
         t = np.arange(len(matrix))
 
     n_features = matrix.shape[1]
-    vertical_spacing = min(0.08, 0.9 / max(n_features - 1, 1))
+    vertical_spacing = min(0.03, 0.18 / max(n_features - 1, 1))
 
     fig = make_subplots(
         rows=n_features,
@@ -754,12 +792,13 @@ def _build_y_exact_chart(data):
         return fig
 
     rows = len(data)
+    vertical_spacing = min(0.04, 0.18 / max(rows - 1, 1))
     fig = make_subplots(
         rows=rows,
         cols=1,
         shared_xaxes=False,
         subplot_titles=[f"Epoch {step_data.get('step', idx)}" for idx, step_data in enumerate(data)],
-        vertical_spacing=0.04,
+        vertical_spacing=vertical_spacing,
     )
 
     for row, step_data in enumerate(data, start=1):
@@ -795,42 +834,50 @@ def _build_loss_trend_charts(data):
         empty_generator.update_layout(title="Generator Loss Trend over Epochs", height=420)
         return empty_forecaster, empty_generator
 
-    epochs = []
-    forecaster_losses_by_step = {}  # {step_idx: [loss_values_across_epochs]}
-    generator_losses_by_step = {}   # {step_idx: [loss_values_across_epochs]}
+    def _normalize_step_loss_map(loss_obj):
+        """Return a normalized {int_step_idx: float_loss} map."""
+        normalized = {}
+        if isinstance(loss_obj, dict):
+            for raw_step, raw_loss in loss_obj.items():
+                try:
+                    step_idx = int(raw_step)
+                    normalized[step_idx] = float(raw_loss)
+                except (TypeError, ValueError):
+                    continue
+            return normalized
 
-    for idx, step_data in enumerate(data):
-        epochs.append(int(step_data.get("step", idx)))
+        if isinstance(loss_obj, (list, tuple)):
+            for step_idx, raw_loss in enumerate(loss_obj):
+                try:
+                    normalized[int(step_idx)] = float(raw_loss)
+                except (TypeError, ValueError):
+                    continue
+        return normalized
 
-        model_losses = step_data.get("model_losses", {})
-        if isinstance(model_losses, dict):
-            for step_idx, loss_val in model_losses.items():
-                if step_idx not in forecaster_losses_by_step:
-                    forecaster_losses_by_step[step_idx] = []
-                forecaster_losses_by_step[step_idx].append(float(loss_val))
+    outer_steps = [int(step_data.get("step", idx)) for idx, step_data in enumerate(data)]
+    model_maps = [_normalize_step_loss_map(step_data.get("model_losses", {})) for step_data in data]
+    generator_maps = [_normalize_step_loss_map(step_data.get("generator_loss", {})) for step_data in data]
 
-        gen_losses = step_data.get("generator_loss", {})
-        if isinstance(gen_losses, dict):
-            for step_idx, loss_val in gen_losses.items():
-                if step_idx not in generator_losses_by_step:
-                    generator_losses_by_step[step_idx] = []
-                generator_losses_by_step[step_idx].append(float(loss_val))
+    model_epoch_ids = sorted({k for loss_map in model_maps for k in loss_map.keys()})
+    generator_epoch_ids = sorted({k for loss_map in generator_maps for k in loss_map.keys()})
 
     fig_forecaster = go.Figure()
-    for step_idx in sorted(forecaster_losses_by_step.keys()):
+    for outer_step, loss_map in zip(outer_steps, model_maps):
+        y_values = [loss_map.get(epoch_idx, np.nan) for epoch_idx in model_epoch_ids]
         fig_forecaster.add_trace(
             go.Scatter(
-                x=epochs,
-                y=forecaster_losses_by_step[step_idx],
+                x=model_epoch_ids,
+                y=y_values,
                 mode="lines+markers",
-                name=f"step {step_idx}",
+                name=f"step {outer_step}",
                 line=dict(width=2),
                 marker=dict(size=6),
+                connectgaps=False,
             )
         )
 
     fig_forecaster.update_layout(
-        title="Forecaster Loss Trend over Epochs (Per Training Step)",
+        title="Forecaster Loss Trend over Epochs (Per Step)",
         xaxis_title="Epoch",
         yaxis_title="Loss",
         height=420,
@@ -838,20 +885,22 @@ def _build_loss_trend_charts(data):
     )
 
     fig_generator = go.Figure()
-    for step_idx in sorted(generator_losses_by_step.keys()):
+    for outer_step, loss_map in zip(outer_steps, generator_maps):
+        y_values = [loss_map.get(epoch_idx, np.nan) for epoch_idx in generator_epoch_ids]
         fig_generator.add_trace(
             go.Scatter(
-                x=epochs,
-                y=generator_losses_by_step[step_idx],
+                x=generator_epoch_ids,
+                y=y_values,
                 mode="lines+markers",
-                name=f"step {step_idx}",
+                name=f"step {outer_step}",
                 line=dict(width=2),
                 marker=dict(size=6),
+                connectgaps=False,
             )
         )
 
     fig_generator.update_layout(
-        title="Generator Loss Trend over Epochs (Per Training Step)",
+        title="Generator Loss Trend over Epochs (Per Step)",
         xaxis_title="Epoch",
         yaxis_title="Loss",
         height=420,
@@ -861,7 +910,7 @@ def _build_loss_trend_charts(data):
     return fig_forecaster, fig_generator
 
 
-def _build_epoch_prediction_timelines(data, meta):
+def _build_epoch_prediction_timelines(data):
     """Create a grid of 10 timeline charts (2x5), one for each epoch, showing first step prediction."""
     if not data:
         fig = go.Figure()
@@ -885,8 +934,8 @@ def _build_epoch_prediction_timelines(data, meta):
         row = idx // n_cols + 1
         col = idx % n_cols + 1
         
-        targets = np.squeeze(_inverse_y(step_data.get("targets"), meta))
-        predictions = np.squeeze(_inverse_y(step_data.get("predictions"), meta))
+        targets = np.squeeze(_inverse_y(step_data.get("targets"), step_data))
+        predictions = np.squeeze(_inverse_y(step_data.get("predictions"), step_data))
 
         if targets.size == 0 or predictions.size == 0:
             continue
@@ -945,7 +994,7 @@ def index():
     requested_source = request.args.get("source", "")
     active_source = _resolve_selected_source(available_sources, requested_source)
     data_path = os.path.join("output", active_source)
-    data, meta, grid_search_history, config_dict = _load_data(data_path)
+    data, grid_search_history, config_dict = _load_data(data_path)
     config_table = _build_config_table(config_dict)
 
     if not data:
@@ -973,12 +1022,12 @@ def index():
         )
 
     grid_search_table, fig_grid_search = _build_grid_search_table_and_chart(grid_search_history)
-    epoch_table, fig_epoch_trend = _build_epoch_summary_table_and_chart(data, meta)
+    epoch_table, fig_epoch_trend = _build_epoch_summary_table_and_chart(data)
     fig_params_exact = _build_params_exact_chart(data)
     fig_params_heat = _build_params_heatmap_chart(data)
     fig_params_delta = _build_params_delta_line_chart(data)
     last = data[-1]
-    fig_pred_history = _build_prediction_history_chart(data, meta)
+    fig_pred_history = _build_prediction_history_chart(data)
     fig_x = _build_features_chart(last)
     fig_y = _build_y_history_chart(data)
     fig_y_exact = _build_y_exact_chart(data)

@@ -17,6 +17,7 @@ class XFeature(Enum):
     X11 = "x11"
     X12 = "x12"
     X13 = "x13"
+    X14 = "x14"
 
 
 class SplitMode(Enum):
@@ -50,7 +51,7 @@ class Config:
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
-    training_epochs = 10
+    adversarial_epochs = 20
     forcast_trainer_epoch = 10
     generator_epoch = 10
     grade_search_epochs = 10
@@ -106,7 +107,7 @@ class Config:
             "forcaster_trainer_learning_rate": Config.forcaster_trainer_learning_rate,
             "generator_clamp_min": Config.generator_clamp_min,
             "generator_clamp_max": Config.generator_clamp_max,
-            "training_epochs": Config.training_epochs,
+            "training_epochs": Config.adversarial_epochs,
             "forcast_trainer_epoch": Config.forcast_trainer_epoch,
             "generator_epoch": Config.generator_epoch,
             "grade_search_epochs": Config.grade_search_epochs,
