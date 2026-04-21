@@ -58,7 +58,7 @@ class Config:
     def set_input_dim( features: list[XFeature]):
         num_features = len(features)
         # Layout: [hour_idx, x1..xN]
-        return 1 + num_features
+        Config.input_dim = 1 + num_features
 
 
     noise_std: float = 2
