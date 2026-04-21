@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request
+from flask import Flask, jsonify, render_template, request
 import json
 import os
 
@@ -8,6 +8,10 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 app = Flask(__name__)
+
+
+_DATA_CACHE = {}
+_SECTION_HTML_CACHE = {}
 
 
 PLOTLY_CONFIG = {
@@ -26,6 +30,46 @@ def _load_data(path: str = "output/dashboard_data.json"):
             return payload, [], {}
     except FileNotFoundError:
         return [], [], {}
+
+
+def _load_data_cached(path: str = "output/dashboard_data.json"):
+    abs_path = os.path.abspath(path)
+    try:
+        mtime = os.path.getmtime(abs_path)
+    except OSError:
+        return [], [], {}, abs_path, None
+
+    cached = _DATA_CACHE.get(abs_path)
+    if cached and cached.get("mtime") == mtime:
+        return cached["data"], cached["grid_search_history"], cached["config"], abs_path, mtime
+
+    data, grid_search_history, config_dict = _load_data(abs_path)
+    _DATA_CACHE[abs_path] = {
+        "mtime": mtime,
+        "data": data,
+        "grid_search_history": grid_search_history,
+        "config": config_dict,
+    }
+    return data, grid_search_history, config_dict, abs_path, mtime
+
+
+def _get_data_for_source(source_name: str):
+    data_path = os.path.join("output", source_name)
+    data, grid_search_history, config_dict, abs_path, mtime = _load_data_cached(data_path)
+    return {
+        "data": data,
+        "grid_search_history": grid_search_history,
+        "config": config_dict,
+        "cache_key": (abs_path, mtime),
+    }
+
+
+def _fig_to_html(fig):
+    return fig.to_html(full_html=False, config=PLOTLY_CONFIG)
+
+
+def _empty_state(message: str):
+    return f'<div class="empty-state">{message}</div>'
 
 
 def _list_output_sources(output_dir: str = "output"):
@@ -988,70 +1032,102 @@ def _build_epoch_prediction_timelines(data):
     return fig
 
 
+def _render_section_html(section_id: str, data_bundle: dict):
+    data = data_bundle["data"]
+    grid_search_history = data_bundle["grid_search_history"]
+    config_dict = data_bundle["config"]
+
+    if section_id == "config":
+        return _build_config_table(config_dict)
+
+    if section_id == "grid_search":
+        table_html, fig = _build_grid_search_table_and_chart(grid_search_history)
+        return table_html + _fig_to_html(fig)
+
+    if section_id == "epoch_summary":
+        table_html, fig = _build_epoch_summary_table_and_chart(data)
+        return table_html + _fig_to_html(fig)
+
+    if section_id == "params_exact":
+        return _fig_to_html(_build_params_exact_chart(data))
+
+    if section_id == "params_heat":
+        return _fig_to_html(_build_params_heatmap_chart(data))
+
+    if section_id == "params_delta":
+        return _fig_to_html(_build_params_delta_line_chart(data))
+
+    if section_id == "pred_history":
+        return _fig_to_html(_build_prediction_history_chart(data))
+
+    if section_id == "x_features":
+        if not data:
+            return _fig_to_html(_build_features_chart({}))
+        return _fig_to_html(_build_features_chart(data[-1]))
+
+    if section_id == "y_generated":
+        return _fig_to_html(_build_y_history_chart(data)) + _fig_to_html(_build_y_exact_chart(data))
+
+    if section_id == "loss_trends":
+        fig_forecaster_loss, fig_generator_loss = _build_loss_trend_charts(data)
+        return _fig_to_html(fig_forecaster_loss) + _fig_to_html(fig_generator_loss)
+
+    return _empty_state("Unknown section requested.")
+
+
+def _get_section_html(source_name: str, section_id: str):
+    data_bundle = _get_data_for_source(source_name)
+    cache_key = (*data_bundle["cache_key"], section_id)
+    cached_html = _SECTION_HTML_CACHE.get(cache_key)
+    if cached_html is not None:
+        return cached_html
+
+    html = _render_section_html(section_id, data_bundle)
+
+    # Keep cache bounded to avoid unbounded memory growth.
+    if len(_SECTION_HTML_CACHE) > 128:
+        _SECTION_HTML_CACHE.clear()
+    _SECTION_HTML_CACHE[cache_key] = html
+    return html
+
+
 @app.route("/")
 def index():
     available_sources = _list_output_sources("output")
     requested_source = request.args.get("source", "")
     active_source = _resolve_selected_source(available_sources, requested_source)
-    data_path = os.path.join("output", active_source)
-    data, grid_search_history, config_dict = _load_data(data_path)
-    config_table = _build_config_table(config_dict)
-
-    if not data:
-        empty = go.Figure()
-        empty.update_layout(title="No dashboard data found")
-        empty_html = empty.to_html(full_html=False, config=PLOTLY_CONFIG)
-        return render_template(
-            "index.html",
-            grid_search_table='<div class="empty-state">No grid search data found.</div>',
-            plot_grid_search=empty_html,
-            epoch_table='<div class="empty-state">No epoch data found.</div>',
-            plot_epoch_trend=empty_html,
-            plot_params_exact=empty_html,
-            plot_params_heat=empty_html,
-            plot_params_delta=empty_html,
-            plot_pred_history=empty_html,
-            plot_x=empty_html,
-            plot_y=empty_html,
-            plot_y_exact=empty_html,
-            plot_forecaster_loss=empty_html,
-            plot_generator_loss=empty_html,
-            available_sources=available_sources,
-            active_source=active_source,
-            config_table=config_table,
-        )
-
-    grid_search_table, fig_grid_search = _build_grid_search_table_and_chart(grid_search_history)
-    epoch_table, fig_epoch_trend = _build_epoch_summary_table_and_chart(data)
-    fig_params_exact = _build_params_exact_chart(data)
-    fig_params_heat = _build_params_heatmap_chart(data)
-    fig_params_delta = _build_params_delta_line_chart(data)
-    last = data[-1]
-    fig_pred_history = _build_prediction_history_chart(data)
-    fig_x = _build_features_chart(last)
-    fig_y = _build_y_history_chart(data)
-    fig_y_exact = _build_y_exact_chart(data)
-    fig_forecaster_loss, fig_generator_loss = _build_loss_trend_charts(data)
-
     return render_template(
         "index.html",
-        grid_search_table=grid_search_table,
-        plot_grid_search=fig_grid_search.to_html(full_html=False, config=PLOTLY_CONFIG),
-        epoch_table=epoch_table,
-        plot_epoch_trend=fig_epoch_trend.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_params_exact=fig_params_exact.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_params_heat=fig_params_heat.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_params_delta=fig_params_delta.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_pred_history=fig_pred_history.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_x=fig_x.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_y=fig_y.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_y_exact=fig_y_exact.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_forecaster_loss=fig_forecaster_loss.to_html(full_html=False, config=PLOTLY_CONFIG),
-        plot_generator_loss=fig_generator_loss.to_html(full_html=False, config=PLOTLY_CONFIG),
         available_sources=available_sources,
         active_source=active_source,
-        config_table=config_table,
     )
+
+
+@app.get("/api/section")
+def api_section():
+    available_sources = _list_output_sources("output")
+    requested_source = request.args.get("source", "")
+    active_source = _resolve_selected_source(available_sources, requested_source)
+    section_id = request.args.get("section", "")
+
+    allowed_sections = {
+        "config",
+        "grid_search",
+        "epoch_summary",
+        "params_exact",
+        "params_heat",
+        "params_delta",
+        "pred_history",
+        "x_features",
+        "y_generated",
+        "loss_trends",
+    }
+
+    if section_id not in allowed_sections:
+        return jsonify({"ok": False, "error": "Invalid section id."}), 400
+
+    html = _get_section_html(active_source, section_id)
+    return jsonify({"ok": True, "section": section_id, "source": active_source, "html": html})
 
 
 if __name__ == "__main__":

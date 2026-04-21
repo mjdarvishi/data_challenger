@@ -43,30 +43,10 @@ if __name__ == "__main__":
     #     ITransformerForcaster,
     # )
     main(
-        [
-        XFeature.X2,
-        XFeature.X5,
-        ],
-        ITransformerForcaster,
+        [XFeature.X11, XFeature.X13,XFeature.X14],
+        AutoformerForcaster,
     )
-    main(
-        [
-        XFeature.X1,
-        XFeature.X2,
-        XFeature.X3,
-        XFeature.X4,
-        XFeature.X5,
-        XFeature.X6,
-        XFeature.X7,
-        XFeature.X8,
-        XFeature.X9,
-        XFeature.X10,
-        XFeature.X11,
-        XFeature.X13,
-        XFeature.X14
-        ],
-        ITransformerForcaster,
-    )
+    
     # main(
     #     [XFeature.X11],
     #     ITransformerForcaster,

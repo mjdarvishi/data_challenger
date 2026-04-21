@@ -265,6 +265,52 @@
             font-size: 13px;
         }
 
+        .lazy-slot {
+            min-height: 120px;
+        }
+
+        .loading-state {
+            margin-top: 10px;
+            padding: 12px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 8px;
+            color: #64748b;
+            background: #f8fafc;
+        }
+
+        .loading-state::before {
+            content: "";
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #cbd5e1;
+            border-top-color: #2563eb;
+            border-radius: 50%;
+            margin-right: 8px;
+            vertical-align: text-bottom;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-state.error {
+            border-color: #fecaca;
+            color: #b91c1c;
+            background: #fef2f2;
+        }
+
+        .loading-state.error::before {
+            display: none;
+        }
+
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
         @media (max-width: 1024px) {
             .layout {
                 flex-direction: column;
@@ -324,7 +370,9 @@
 <div class="panel">
     <h2>Config Values</h2>
     <p>Current runtime configuration loaded from core/config.py.</p>
-    {{ config_table | safe }}
+    <div class="lazy-slot" data-section-id="config">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 
@@ -332,69 +380,81 @@
     <h2>0. Grid Search Results</h2>
     <p>All tested parameter combinations with their MSE, plus the best configuration and its trend.</p>
     <div class="tag-list"><span class="tag">#grid_search</span><span class="tag">#result</span></div>
-    {{ grid_search_table | safe }}
-    {{ plot_grid_search | safe }}
+    <div class="lazy-slot" data-section-id="grid_search">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="result,per_step">
     <h2>0a. Epoch Summary</h2>
     <p>Per-epoch timing, forecaster loss, and prediction MSE summary with a trend chart.</p>
     <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
-    {{ epoch_table | safe }}
-    {{ plot_epoch_trend | safe }}
+    <div class="lazy-slot" data-section-id="epoch_summary">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="params,per_step">
     <h2>1. Exact Parameter Values per Step</h2>
     <p>Independent line charts, one row per epoch, with exact b0, b1, and b2 values.</p>
     <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
-    {{ plot_params_exact | safe }}
+    <div class="lazy-slot" data-section-id="params_exact">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="params,per_step">
     <h2>2. Generated Parameters Heatmaps</h2>
     <p>Separate heatmaps for absolute parameter values and parameter deltas vs previous epoch.</p>
     <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
-    {{ plot_params_heat | safe }}
+    <div class="lazy-slot" data-section-id="params_heat">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="params,per_step">
     <h2>3. Parameter Delta Lines by Epoch</h2>
     <p>For each step, current b0, b1, and b2 are plotted alongside the previous epoch values.</p>
     <div class="tag-list"><span class="tag">#params</span><span class="tag">#per_step</span></div>
-    {{ plot_params_delta | safe }}
+    <div class="lazy-slot" data-section-id="params_delta">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="result,per_step">
     <h2>5. Prediction vs Ground Truth over Epochs</h2>
     <p>Original-scale target and prediction lines across epochs, using the first forecast step.</p>
     <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
-    {{ plot_pred_history | safe }}
+    <div class="lazy-slot" data-section-id="pred_history">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="X_feature,per_step">
     <h2>6. X Features</h2>
     <p>Full-range x1 and x2 shown under each other for the latest epoch.</p>
     <div class="tag-list"><span class="tag">#X_feature</span><span class="tag">#per_step</span></div>
-    {{ plot_x | safe }}
+    <div class="lazy-slot" data-section-id="x_features">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="Y_generated,per_step">
     <h2>7. Generated Y Evolution</h2>
     <p>Absolute values and epoch-to-epoch deltas as heatmaps.</p>
     <div class="tag-list"><span class="tag">#Y_generated</span><span class="tag">#per_step</span></div>
-    {{ plot_y | safe }}
-    <h2 style="margin-top: 22px;">Generated Y over Each Epoch</h2>
-    <p>Line charts showing the generated Y values for every epoch.</p>
-    {{ plot_y_exact | safe }}
+    <div class="lazy-slot" data-section-id="y_generated">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <div class="panel filter-item" data-tags="result,per_step">
     <h2>8. Loss Trends over Epochs</h2>
     <p>Average forecaster loss per epoch and generator loss trend.</p>
     <div class="tag-list"><span class="tag">#result</span><span class="tag">#per_step</span></div>
-    {{ plot_forecaster_loss | safe }}
-    {{ plot_generator_loss | safe }}
+    <div class="lazy-slot" data-section-id="loss_trends">
+        <div class="loading-state">Loading section...</div>
+    </div>
 </div>
 
 <script>
@@ -448,6 +508,131 @@
 
         checkboxes.forEach((cb) => cb.addEventListener('change', applyFilter));
         applyFilter();
+
+        const activeSource = {{ active_source | tojson }};
+        const lazySlots = Array.from(document.querySelectorAll('.lazy-slot[data-section-id]'));
+        const queue = [];
+        const queued = new Set();
+        let isLoading = false;
+
+        function setError(slot, message) {
+            slot.innerHTML = `<div class="loading-state error">${message}</div>`;
+        }
+
+        async function setHtmlAndRunScripts(slot, html) {
+            slot.innerHTML = html;
+            const scripts = Array.from(slot.querySelectorAll('script'));
+
+            for (const oldScript of scripts) {
+                const newScript = document.createElement('script');
+
+                for (const attr of Array.from(oldScript.attributes)) {
+                    newScript.setAttribute(attr.name, attr.value);
+                }
+
+                if (!oldScript.src) {
+                    newScript.text = oldScript.textContent;
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                    continue;
+                }
+
+                // Keep execution order deterministic so Plotly library loads before inline plot code.
+                await new Promise((resolve, reject) => {
+                    newScript.onload = resolve;
+                    newScript.onerror = reject;
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
+            }
+        }
+
+        async function loadSection(slot) {
+            const sectionId = slot.dataset.sectionId;
+            if (!sectionId || slot.dataset.loaded === '1') {
+                return;
+            }
+
+            try {
+                const url = `/api/section?source=${encodeURIComponent(activeSource)}&section=${encodeURIComponent(sectionId)}`;
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const payload = await response.json();
+                if (!payload.ok) {
+                    throw new Error(payload.error || 'Unknown API error');
+                }
+
+                await setHtmlAndRunScripts(slot, payload.html);
+                slot.dataset.loaded = '1';
+            } catch (err) {
+                setError(slot, `Failed to load section (${sectionId}): ${err.message}`);
+            }
+        }
+
+        async function runQueue() {
+            if (isLoading) {
+                return;
+            }
+            isLoading = true;
+
+            while (queue.length > 0) {
+                const slot = queue.shift();
+                if (!slot || slot.dataset.loaded === '1') {
+                    continue;
+                }
+                await loadSection(slot);
+            }
+
+            isLoading = false;
+        }
+
+        function enqueue(slot) {
+            if (!slot || slot.dataset.loaded === '1') {
+                return;
+            }
+            const sectionId = slot.dataset.sectionId;
+            if (!sectionId || queued.has(sectionId)) {
+                return;
+            }
+            queued.add(sectionId);
+            queue.push(slot);
+            runQueue();
+        }
+
+        // Load top sections immediately so users see content quickly.
+        lazySlots.slice(0, 2).forEach(enqueue);
+
+        if ('IntersectionObserver' in window) {
+            const observer = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (!entry.isIntersecting) {
+                            return;
+                        }
+                        const slot = entry.target;
+                        observer.unobserve(slot);
+                        enqueue(slot);
+                    });
+                },
+                {
+                    root: null,
+                    rootMargin: '300px 0px',
+                    threshold: 0.01,
+                }
+            );
+
+            lazySlots.forEach((slot) => observer.observe(slot));
+        } else {
+            // Fallback for old browsers.
+            lazySlots.forEach(enqueue);
+        }
     })();
 </script>
 

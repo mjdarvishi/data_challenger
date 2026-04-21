@@ -135,7 +135,17 @@ class AutoformerForcaster(BaseForecastModel):
 
     @classmethod
     def search_space(cls):
-        return {
+        if Config.debug:
+            return {
+                "d_model": [128],
+                "n_heads": [4],
+                "e_layers": [2],
+                "d_layers": [1],
+                "d_ff": [512],
+                "dropout": [0.1],
+            }
+        else:
+             return {
             "d_model": [128, 256],
             "n_heads": [4, 8],
             "e_layers": [2, 3],
