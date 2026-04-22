@@ -38,29 +38,9 @@ def main(
     pipe.tracker.export(name=pipe.name)
 
 if __name__ == "__main__":
-    # main(
-    #     [XFeature.X9, XFeature.X5, XFeature.X1, XFeature.X2, XFeature.X3, XFeature.X4, XFeature.X11],
-    #     ITransformerForcaster,
-    # )
+  
+  
     main(
         [XFeature.X11, XFeature.X13,XFeature.X14],
-        AutoformerForcaster,
+        DLinearForcaster,
     )
-    
-    # main(
-    #     [XFeature.X11],
-    #     ITransformerForcaster,
-    # )
-    # main(
-    #     [XFeature.X13],
-    #     ITransformerForcaster,
-    # )
-    # main(
-    #     [XFeature.X11, XFeature.X13,XFeature.X5],
-    #     ITransformerForcaster,
-    # )
-    # main(
-    #     [XFeature.X12, XFeature.X1],
-    #     ITransformerForcaster,
-    # )
-    

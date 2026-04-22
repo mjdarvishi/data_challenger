@@ -56,9 +56,7 @@ class AutoformerForcaster(BaseForecastModel):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        # =========================
-        # REAL AUTOFORMER CONFIG (FIXED)
-        # =========================
+        
         cfg = SimpleNamespace()
 
         cfg.task_name = "long_term_forecast"
