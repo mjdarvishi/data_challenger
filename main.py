@@ -41,6 +41,6 @@ if __name__ == "__main__":
   
   
     main(
-        [XFeature.X11, XFeature.X13,XFeature.X14],
-        DLinearForcaster,
+        [XFeature.X2, XFeature.X5],
+        NLinearForcaster,
     )

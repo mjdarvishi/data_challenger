@@ -290,7 +290,7 @@ def _build_grid_search_table_and_chart(grid_search_history):
     display_df = display_df.rename(columns={"mse": "MSE"})
     display_df["MSE"] = display_df["MSE"].astype(float).map(lambda value: f"{value:.4f}")
 
-    best_index = int(df["mse"].astype(float).idxmin())
+    best_index = int(df["mse"].astype(float).idxmax())
     best_params = run.get("best_params", {}) if isinstance(run, dict) else {}
     best_score = float(run.get("best_score", df["mse"].min())) if isinstance(run, dict) else float(df["mse"].min())
 
@@ -330,7 +330,130 @@ def _build_grid_search_table_and_chart(grid_search_history):
         f'| <strong>Best MSE:</strong> {best_score:.4f}</div>'
     )
     return summary + _html_table(display_df, "No grid search results found."), fig
+def _build_quality_panel(data):
+    if not data:
+        return '<div class="empty-state">No epoch data to evaluate.</div>'
 
+    rows = []
+    for step_data in data:
+        train = step_data.get("train_eval_mse")
+        val   = step_data.get("val_eval_mse")
+        test  = step_data.get("test_eval_mse")
+        if None in (train, val, test):
+            continue
+        rows.append({
+            "step":  int(step_data.get("step", len(rows))),
+            "train": float(train),
+            "val":   float(val),
+            "test":  float(test),
+        })
+
+    if not rows:
+        return '<div class="empty-state">MSE values missing in epoch data.</div>'
+
+    best_idx  = min(range(len(rows)), key=lambda i: rows[i]["val"])
+    first_val = rows[0]["val"]
+    best_val  = rows[best_idx]["val"]
+    improvement = (first_val - best_val) / first_val * 100 if first_val else 0
+    early_stop = best_idx < len(rows) - 1
+
+    def badge(cls, label):
+        return f'<span class="quality-badge quality-{cls}">{label}</span>'
+
+    def score(r):
+        overfit_gap = r["val"] - r["train"]
+        gen_gap     = r["test"] - r["val"]
+        overfit_cls = "good" if overfit_gap < 0.05 else ("warn" if overfit_gap < 0.12 else "bad")
+        gen_cls     = "good" if gen_gap     < 0.03 else ("warn" if gen_gap     < 0.06 else "bad")
+        return overfit_gap, gen_gap, overfit_cls, gen_cls
+
+    css = """
+    <style>
+    .quality-badge{display:inline-block;font-size:11px;font-weight:500;padding:2px 7px;border-radius:6px}
+    .quality-good{background:#dcfce7;color:#166534}
+    .quality-warn{background:#fef9c3;color:#854d0e}
+    .quality-bad {background:#fee2e2;color:#991b1b}
+    .quality-neutral{background:#f3f4f6;color:#374151;border:0.5px solid #d1d5db}
+    .quality-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.25rem}
+    .quality-card{background:#f9fafb;border-radius:8px;padding:12px 14px}
+    .quality-card p{margin:0}
+    .quality-card .qlabel{font-size:12px;color:#6b7280}
+    .quality-card .qval{font-size:20px;font-weight:500}
+    .quality-card .qsub{font-size:11px;color:#9ca3af;margin-top:3px}
+    .quality-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:1rem}
+    .quality-table th{font-size:12px;font-weight:500;color:#6b7280;text-align:left;padding:6px 8px;border-bottom:1px solid #e5e7eb}
+    .quality-table td{padding:7px 8px;border-bottom:1px solid #f3f4f6}
+    .quality-table tr.best-epoch td{background:#f0fdf4}
+    .quality-hint{font-size:11px;color:#9ca3af;margin-top:8px}
+    </style>
+    """
+
+    early_badge = badge("warn", f"val rising after epoch {rows[best_idx]['step']}") if early_stop else badge("good", "still improving")
+    
+    cards = f"""
+    <div class="quality-cards">
+      <div class="quality-card">
+        <p class="qlabel">Best val MSE</p>
+        <p class="qval">{best_val:.4f}</p>
+        <p class="qsub">epoch {rows[best_idx]['step']}</p>
+      </div>
+      <div class="quality-card">
+        <p class="qlabel">Val improvement</p>
+        <p class="qval">{improvement:.1f}%</p>
+        <p class="qsub">epoch 0 → best</p>
+      </div>
+      <div class="quality-card">
+        <p class="qlabel">Best test MSE</p>
+        <p class="qval">{rows[best_idx]['test']:.4f}</p>
+        <p class="qsub">at best val epoch</p>
+      </div>
+      <div class="quality-card">
+        <p class="qlabel">Early stopping signal</p>
+        <p class="qval" style="font-size:13px;padding-top:6px">{early_badge}</p>
+        <p class="qsub">&nbsp;</p>
+      </div>
+    </div>
+    """
+
+    header = """
+    <table class="quality-table">
+    <thead><tr>
+      <th>Epoch</th><th>Train MSE</th><th>Val MSE</th><th>Test MSE</th>
+      <th title="val - train">Overfit gap</th><th title="test - val">Gen. gap</th><th>Signal</th>
+    </tr></thead><tbody>
+    """
+
+    body = ""
+    for i, r in enumerate(rows):
+        og, gg, oc, gc = score(r)
+        is_best = (i == best_idx)
+        row_cls = ' class="best-epoch"' if is_best else ""
+        star    = " ★" if is_best else ""
+        og_str  = f"+{og:.3f}" if og >= 0 else f"{og:.3f}"
+        gg_str  = f"+{gg:.3f}" if gg >= 0 else f"{gg:.3f}"
+
+        if oc == "good" and gc == "good":
+            sig = badge("good", "healthy")
+        elif oc == "bad":
+            sig = badge("bad", "overfitting")
+        elif gc == "bad":
+            sig = badge("bad", "poor gen.")
+        else:
+            sig = badge("warn", "watch")
+
+        body += f"""<tr{row_cls}>
+          <td><strong>{r['step']}{star}</strong></td>
+          <td>{r['train']:.4f}</td>
+          <td>{r['val']:.4f}</td>
+          <td>{r['test']:.4f}</td>
+          <td>{badge(oc, og_str)}</td>
+          <td>{badge(gc, gg_str)}</td>
+          <td>{sig}</td>
+        </tr>"""
+
+    hint = '<p class="quality-hint">Overfit gap = val − train &nbsp;|&nbsp; Gen. gap = test − val &nbsp;|&nbsp; ★ = best val epoch &nbsp;|&nbsp; thresholds: overfit &lt;0.05 good, &lt;0.12 warn; gen &lt;0.03 good, &lt;0.06 warn</p>'
+
+    return css + cards + header + body + "</tbody></table>" + hint
 
 def _build_epoch_summary_table_and_chart(data):
     rows = []
@@ -1030,7 +1153,204 @@ def _build_epoch_prediction_timelines(data):
         hovermode="x unified",
     )
     return fig
+def _compute_prediction_metrics(targets_raw, predictions_raw, step_data):
+    """Compute quality metrics from raw prediction arrays."""
+    import numpy as np
 
+    t = np.squeeze(_inverse_y(targets_raw, step_data))
+    p = np.squeeze(_inverse_y(predictions_raw, step_data))
+
+    if t.size == 0 or p.size == 0:
+        return None
+
+    # flatten multi-horizon to first step only for diagnostics
+    if t.ndim > 1: t = t[:, 0]
+    if p.ndim > 1: p = p[:, 0]
+
+    n = min(len(t), len(p))
+    t, p = t[:n], p[:n]
+
+    err   = p - t
+    mse   = float(np.mean(err ** 2))
+    mae   = float(np.mean(np.abs(err)))
+    bias  = float(np.mean(err))
+    rmse  = float(np.sqrt(mse))
+
+    # directional accuracy
+    t_diff = np.diff(t)
+    p_diff = np.diff(p)
+    dir_acc = float(np.mean((t_diff * p_diff) > 0) * 100) if len(t_diff) > 0 else 0.0
+
+    # R²
+    ss_tot = float(np.sum((t - np.mean(t)) ** 2))
+    ss_res = float(np.sum(err ** 2))
+    r2 = 1 - ss_res / ss_tot if ss_tot > 1e-10 else 0.0
+
+    # relative RMSE (as % of target std)
+    t_std = float(np.std(t))
+    rel_rmse = (rmse / t_std * 100) if t_std > 1e-10 else 100.0
+
+    return dict(mse=mse, mae=mae, bias=bias, rmse=rmse,
+                dir_acc=dir_acc, r2=r2, rel_rmse=rel_rmse)
+
+
+def _grade_metrics(m):
+    pts = 0
+    # Generator wins by making RMSE large relative to target variance
+    if m["rel_rmse"] > 80:   pts += 3
+    elif m["rel_rmse"] > 50: pts += 2
+    elif m["rel_rmse"] > 20: pts += 1
+
+    # Low R² = forecaster predictions are uncorrelated with targets = generator winning
+    if m["r2"] < 0.1:    pts += 3
+    elif m["r2"] < 0.4:  pts += 2
+    elif m["r2"] < 0.7:  pts += 1
+
+    # Directional accuracy low = forecaster can't track direction = good for generator
+    if m["dir_acc"] < 45:    pts += 2
+    elif m["dir_acc"] < 55:  pts += 1
+
+    # Bias is still bad regardless — a biased generator is predictable
+    if abs(m["bias"]) < 0.1:  pts += 2
+    elif abs(m["bias"]) < 0.3: pts += 1
+
+    if pts >= 8: return "quality-good", "generator winning"
+    if pts >= 5: return "quality-warn", "contested"
+    return "quality-bad", "forecaster winning"
+
+
+def _build_prediction_quality_panel(data):
+    if not data:
+        return '<div class="empty-state">No prediction data available.</div>'
+
+    css = """<style>
+    .quality-badge{display:inline-block;font-size:11px;font-weight:500;padding:2px 8px;border-radius:6px;margin-right:4px}
+    .quality-good{background:#dcfce7;color:#166534}
+    .quality-warn{background:#fef9c3;color:#854d0e}
+    .quality-bad{background:#fee2e2;color:#991b1b}
+    .pq-epoch{border:0.5px solid #e5e7eb;border-radius:10px;padding:14px 16px;margin-bottom:12px}
+    .pq-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .pq-epoch-title{font-size:14px;font-weight:500}
+    .pq-epoch-mse{font-size:13px;color:#6b7280}
+    .pq-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-bottom:10px}
+    .pq-metric{background:#f9fafb;border-radius:8px;padding:8px 10px}
+    .pq-metric .ml{font-size:11px;color:#6b7280;margin:0 0 2px}
+    .pq-metric .mv{font-size:15px;font-weight:500;margin:0}
+    .pq-metric .ms{font-size:10px;color:#9ca3af;margin:2px 0 0}
+    .pq-bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+    .pq-bar-label{font-size:11px;color:#6b7280;width:90px;flex-shrink:0}
+    .pq-bar-track{flex:1;height:6px;border-radius:3px;background:#e5e7eb;overflow:hidden}
+    .pq-bar-fill{height:100%;border-radius:3px}
+    .pq-bar-val{font-size:11px;color:#6b7280;width:40px;text-align:right;flex-shrink:0}
+    .pq-verdict{font-size:12px;color:#6b7280;margin-top:8px;padding-top:8px;border-top:0.5px solid #f3f4f6}
+    .pq-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:1.25rem}
+    .pq-sum-card{background:#f9fafb;border-radius:8px;padding:12px}
+    .pq-sum-card .sl{font-size:12px;color:#6b7280;margin:0 0 4px}
+    .pq-sum-card .sv{font-size:20px;font-weight:500;margin:0}
+    .pq-sum-card .ss{font-size:11px;color:#9ca3af;margin:3px 0 0}
+    .pq-section-title{font-size:12px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin:1.25rem 0 .75rem}
+    </style>"""
+
+    def badge(cls, label):
+        return f'<span class="quality-badge {cls}">{label}</span>'
+
+    def bar(label, pct, color):
+        pct = max(2, min(100, pct))
+        return (f'<div class="pq-bar-row">'
+                f'<span class="pq-bar-label">{label}</span>'
+                f'<div class="pq-bar-track"><div class="pq-bar-fill" style="width:{pct:.1f}%;background:{color}"></div></div>'
+                f'<span class="pq-bar-val">{pct:.0f}%</span></div>')
+
+    bar_color = {"quality-good": "#16a34a", "quality-warn": "#ca8a04", "quality-bad": "#dc2626"}
+
+    all_metrics = []
+    for step_data in data:
+        m = _compute_prediction_metrics(
+            step_data.get("predictions"),
+            step_data.get("targets"),
+            step_data,
+        )
+        if m:
+            m["step"] = step_data.get("step", len(all_metrics))
+            all_metrics.append(m)
+
+    if not all_metrics:
+        return '<div class="empty-state">No prediction arrays found in epoch data.</div>'
+
+    best_idx = max(range(len(all_metrics)), key=lambda i: all_metrics[i]["mse"])
+    best_mse = all_metrics[best_idx]["mse"]
+    first_mse = all_metrics[0]["mse"]
+    improvement = (best_mse - first_mse) / first_mse * 100  # higher is better
+    early_stop = best_idx < len(all_metrics) - 1  # val started falling after peak
+    best_dir = max(m["dir_acc"] for m in all_metrics)
+
+    summary = f"""<div class="pq-summary">
+      <div class="pq-sum-card"><p class="sl">Best test MSE</p><p class="sv">{best_mse:.4f}</p><p class="ss">epoch {all_metrics[best_idx]['step']}</p></div>
+      <div class="pq-sum-card"><p class="sl">MSE improvement</p><p class="sv">{improvement:.1f}%</p><p class="ss">epoch 0 → best</p></div>
+      <div class="pq-sum-card"><p class="sl">Best dir. accuracy</p><p class="sv">{best_dir:.0f}%</p><p class="ss">across all epochs</p></div>
+      <div class="pq-sum-card"><p class="sl">Overfitting after ep.</p><p class="sv">{all_metrics[best_idx]['step'] if early_stop else '—'}</p><p class="ss">{'MSE rising' if early_stop else 'still improving'}</p></div>
+    </div>"""
+
+    parts = [css, summary, '<p class="pq-section-title">Per-epoch breakdown</p>']
+
+    for i, m in enumerate(all_metrics):
+        cls, label = _grade_metrics(m)
+        is_best = (i == best_idx)
+        star = " ★ best" if is_best else ""
+        color = bar_color[cls]
+
+        bias_dir = ("over-predicting" if m["bias"] > 0.05
+                    else "under-predicting" if m["bias"] < -0.05
+                    else "unbiased")
+        bias_cls = ("quality-good" if abs(m["bias"]) < 0.1
+                    else "quality-warn" if abs(m["bias"]) < 0.3
+                    else "quality-bad")
+
+        dir_cls  = "quality-good" if m["dir_acc"] > 65 else ("quality-warn" if m["dir_acc"] > 50 else "quality-bad")
+        r2_cls   = "quality-good" if m["r2"] > 0.7 else ("quality-warn" if m["r2"] > 0.4 else "quality-bad")
+        rel_cls  = "quality-good" if m["rel_rmse"] < 20 else ("quality-warn" if m["rel_rmse"] < 50 else "quality-bad")
+
+        r2_pct   = max(0, min(100, m["r2"] * 100))
+        rel_pct  = max(0, 100 - m["rel_rmse"])
+
+        if cls == "quality-good":
+            verdict = "Generator is successfully fooling the forecaster — high error, low correlation, poor directional tracking."
+        elif cls == "quality-warn":
+            parts_v = []
+            if m["dir_acc"] > 60: parts_v.append("Forecaster still tracks direction reasonably well.")
+            if m["r2"] > 0.5: parts_v.append("R² still moderate — forecaster partially correlated with targets.")
+            if abs(m["bias"]) > 0.2: parts_v.append(f"Generator bias ({bias_dir}) makes it predictable.")
+            verdict = "Contested. " + " ".join(parts_v) if parts_v else "Neither side has a clear edge."
+        else:
+            parts_v = []
+            if m["rel_rmse"] < 20: parts_v.append("RMSE is low — forecaster handling generated data well.")
+            if m["r2"] > 0.7: parts_v.append("High R² — predictions closely follow targets.")
+            if abs(m["bias"]) > 0.3: parts_v.append(f"Generator is biased ({bias_dir}) and easy to predict.")
+            verdict = "Forecaster winning. " + " ".join(parts_v) if parts_v else "Forecaster is handling the generated data well — generator needs improvement."
+
+        bias_str = f"+{m['bias']:.4f}" if m["bias"] > 0 else f"{m['bias']:.4f}"
+
+        parts.append(f"""<div class="pq-epoch">
+          <div class="pq-header">
+            <span class="pq-epoch-title">Epoch {m['step']}{star}</span>
+            <span class="pq-epoch-mse">MSE {m['mse']:.4f}</span>
+            {badge(cls, label)}
+            {badge(bias_cls, bias_dir)}
+          </div>
+          <div class="pq-metrics">
+            <div class="pq-metric"><p class="ml">RMSE</p><p class="mv">{m['rmse']:.4f}</p><p class="ms">error scale</p></div>
+            <div class="pq-metric"><p class="ml">R²</p><p class="mv">{m['r2']:.3f}</p><p class="ms">variance explained</p></div>
+            <div class="pq-metric"><p class="ml">Dir. accuracy</p><p class="mv">{m['dir_acc']:.1f}%</p><p class="ms">up/down correct</p></div>
+            <div class="pq-metric"><p class="ml">Rel. RMSE</p><p class="mv">{m['rel_rmse']:.1f}%</p><p class="ms">% of target std</p></div>
+            <div class="pq-metric"><p class="ml">Bias</p><p class="mv">{bias_str}</p><p class="ms">mean error</p></div>
+          </div>
+          {bar('R² score', r2_pct, bar_color[r2_cls])}
+          {bar('Dir. accuracy', m['dir_acc'], bar_color[dir_cls])}
+          {bar('RMSE quality', rel_pct, bar_color[rel_cls])}
+          <p class="pq-verdict">{verdict}</p>
+        </div>""")
+
+    return "\n".join(parts)
 
 def _render_section_html(section_id: str, data_bundle: dict):
     data = data_bundle["data"]
@@ -1046,8 +1366,8 @@ def _render_section_html(section_id: str, data_bundle: dict):
 
     if section_id == "epoch_summary":
         table_html, fig = _build_epoch_summary_table_and_chart(data)
-        return table_html + _fig_to_html(fig)
-
+        quality_html = _build_quality_panel(data)
+        return quality_html + table_html + _fig_to_html(fig)
     if section_id == "params_exact":
         return _fig_to_html(_build_params_exact_chart(data))
 
@@ -1058,7 +1378,8 @@ def _render_section_html(section_id: str, data_bundle: dict):
         return _fig_to_html(_build_params_delta_line_chart(data))
 
     if section_id == "pred_history":
-        return _fig_to_html(_build_prediction_history_chart(data))
+        quality_html = _build_prediction_quality_panel(data) 
+        return quality_html + _fig_to_html(_build_prediction_history_chart(data))
 
     if section_id == "x_features":
         if not data:
