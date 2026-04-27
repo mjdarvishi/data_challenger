@@ -85,6 +85,6 @@ class GeneratorModel(nn.Module):
         difficulty = torch.sigmoid(self.difficulty)
 
         # FINAL OUTPUT
-        y = base + difficulty
+        y = base + difficulty * delta
 
         return y.squeeze(-1)
