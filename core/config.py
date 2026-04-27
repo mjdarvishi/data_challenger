@@ -46,7 +46,7 @@ class Config:
 
     generator_backbone_gain = 2.5
     generator_target_std = 25.0
-    generator_trainer_learning_rate = 2e-2
+    generator_trainer_learning_rate = 2e-1
     generator_realism_weight = 0.05
     generator_scale_weight = 0.0
     generator_initial_residual_scale = 0.2
