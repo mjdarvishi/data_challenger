@@ -47,8 +47,8 @@ class GeneratorModel(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, 1),
         )
-        self.residual_scale = nn.Parameter(torch.tensor(0.05, dtype=torch.float32))
-        self.max_residual = 1.0
+        self.residual_scale = nn.Parameter(torch.tensor(0.2, dtype=torch.float32))
+        self.max_residual = 3.0
         self.feature_scale = float(np.sqrt(self.num_features))
         self._last_residual: torch.Tensor | None = None
         self._last_y: torch.Tensor | None = None

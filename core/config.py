@@ -44,16 +44,16 @@ class Config:
     init_b2_min = -3.0
     init_b2_max = 3.0
 
-    generator_backbone_gain = 2.5
+    generator_backbone_gain = 1
     generator_target_std = 25.0
-    generator_trainer_learning_rate = 2e-1
-    generator_realism_weight = 0.05
-    generator_scale_weight = 0.0
+    generator_trainer_learning_rate = 1e-1
+    generator_realism_weight = 0.1
+    generator_scale_weight = 0.05
     generator_initial_residual_scale = 0.2
     generator_max_residual = 4.0
-    generator_drift_weight = 0.0
-    generator_coeff_smoothness_weight = 0.0
-    generator_y_smoothness_weight = 0.0
+    generator_drift_weight = 0.05
+    generator_coeff_smoothness_weight = 0.05
+    generator_y_smoothness_weight = 0.02
     generator_grad_clip = 1.0
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
