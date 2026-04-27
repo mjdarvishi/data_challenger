@@ -21,7 +21,7 @@ PLOTLY_CONFIG = {
 }
 
 
-def _load_data(path: str = "output/dashboard_data.json"):
+def _load_data(path: str = "output/new/dashboard_data.json"):
     try:
         with open(path, "r") as f:
             payload = json.load(f)
@@ -32,7 +32,7 @@ def _load_data(path: str = "output/dashboard_data.json"):
         return [], [], {}
 
 
-def _load_data_cached(path: str = "output/dashboard_data.json"):
+def _load_data_cached(path: str = "output/new/dashboard_data.json"):
     abs_path = os.path.abspath(path)
     try:
         mtime = os.path.getmtime(abs_path)
@@ -54,7 +54,7 @@ def _load_data_cached(path: str = "output/dashboard_data.json"):
 
 
 def _get_data_for_source(source_name: str):
-    data_path = os.path.join("output", source_name)
+    data_path = os.path.join("output/new/", source_name)
     data, grid_search_history, config_dict, abs_path, mtime = _load_data_cached(data_path)
     return {
         "data": data,
@@ -72,7 +72,7 @@ def _empty_state(message: str):
     return f'<div class="empty-state">{message}</div>'
 
 
-def _list_output_sources(output_dir: str = "output"):
+def _list_output_sources(output_dir: str = "output/new"):
     try:
         names = [
             name
@@ -256,7 +256,7 @@ def _build_grid_search_table_and_chart(grid_search_history):
         empty_fig.update_layout(title="Grid Search MSE Trend", height=420)
         empty_table = (
             '<div class="empty-state">No grid search data found in the exported dashboard payload. '
-            'Run <strong>main.py</strong> again to regenerate output/dashboard_data.json.</div>'
+            'Run <strong>main.py</strong> again to regenerate output/new/dashboard_data.json.</div>'
         )
         return empty_table, empty_fig
 
@@ -1414,7 +1414,7 @@ def _get_section_html(source_name: str, section_id: str):
 
 @app.route("/")
 def index():
-    available_sources = _list_output_sources("output")
+    available_sources = _list_output_sources("output/new/")
     requested_source = request.args.get("source", "")
     active_source = _resolve_selected_source(available_sources, requested_source)
     return render_template(
@@ -1426,7 +1426,7 @@ def index():
 
 @app.get("/api/section")
 def api_section():
-    available_sources = _list_output_sources("output")
+    available_sources = _list_output_sources("output/new/")
     requested_source = request.args.get("source", "")
     active_source = _resolve_selected_source(available_sources, requested_source)
     section_id = request.args.get("section", "")

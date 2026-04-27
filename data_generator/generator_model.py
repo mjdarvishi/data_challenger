@@ -5,33 +5,86 @@ import torch.nn as nn
 from core.config import Config
 
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
 class GeneratorModel(nn.Module):
-    def __init__(self, num_features: int):
+    """
+    Stable adversarial generator:
+    - learns hard perturbations
+    - keeps distribution stable
+    - avoids chaotic regime switching
+    """
+
+    def __init__(self, num_features, hidden_dim=64):
         super().__init__()
-        self.config = Config()
-        if num_features <= 0:
-            raise ValueError("GeneratorModel requires at least one feature")
+
         self.num_features = num_features
-        # =========================================================
-        # INIT PARAMETERS (use controlled initialization)
-        # =========================================================
-        b0, b = self.create_initial_b_params()
+        self.hidden_dim = hidden_dim
 
-        self.b0 = nn.Parameter(torch.tensor(b0, dtype=torch.float32))
-        # Shape: [num_features, hours_per_week]
-        self.b = nn.Parameter(torch.tensor(b, dtype=torch.float32))
+        # =========================================
+        # 1. Feature encoder (structure learning)
+        # =========================================
+        self.encoder = nn.Sequential(
+            nn.Linear(num_features, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
 
-    def forward(self, hour_idx: int, x_features: torch.Tensor) -> torch.Tensor:
-        coeffs = self.b[:, hour_idx]
-        return self.b0[hour_idx] + torch.dot(coeffs, x_features)
+        # =========================================
+        # 2. Temporal memory (stability)
+        # =========================================
+        self.rnn = nn.GRU(hidden_dim, hidden_dim, batch_first=True)
 
-    def clamp_parameters(self):
-        with torch.no_grad():
-            self.b0.copy_(self.b0.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))
-            self.b.copy_(self.b.clamp(self.config.generator_clamp_min, self.config.generator_clamp_max))
+        # =========================================
+        # 3. Base generator (realistic signal)
+        # =========================================
+        self.base_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Tanh(),
+            nn.Linear(hidden_dim, 1)
+        )
 
-    def create_initial_b_params(self):
-            hours = self.config.hours_per_week()
-            b0 = np.random.uniform(self.config.init_b0_min, self.config.init_b0_max, hours)
-            b = np.random.uniform(self.config.init_b1_min, self.config.init_b1_max, (self.num_features, hours))
-            return b0, b
+        # =========================================
+        # 4. Adversarial residual generator
+        # =========================================
+        self.delta_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+
+        # =========================================
+        # 5. Difficulty controller (VERY IMPORTANT)
+        # =========================================
+        self.difficulty = nn.Parameter(torch.tensor(0.1))  # learnable scalar
+
+    def forward(self, X_seq):
+        """
+        X_seq: [B, T, F]
+        """
+
+        # 1. Encode
+        h = self.encoder(X_seq)  # [B, T, H]
+
+        # 2. Temporal memory
+        h, _ = self.rnn(h)
+
+        # 3. Base signal (stable realistic structure)
+        base = self.base_head(h)
+
+        # 4. Adversarial perturbation (bounded)
+        delta = self.delta_head(h)
+
+        # IMPORTANT: bound perturbation
+        delta = torch.tanh(delta)  # [-1, 1]
+
+        # 5. Difficulty scaling (smooth curriculum)
+        difficulty = torch.sigmoid(self.difficulty)
+
+        # FINAL OUTPUT
+        y = base + difficulty
+
+        return y.squeeze(-1)
