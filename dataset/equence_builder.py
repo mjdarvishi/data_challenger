@@ -16,6 +16,12 @@ class SequenceBuilder:
 
         for i in range(max_start):
             x_window = X[i : i + self.seq_len]
+            y_history = Y[i : i + self.seq_len]
+
+            if y_history.dim() == 1:
+                y_history = y_history.unsqueeze(-1)
+
+            x_window = torch.cat([x_window, y_history], dim=-1)
 
             y_window = Y[
                 i + self.seq_len :

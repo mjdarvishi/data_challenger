@@ -44,21 +44,31 @@ class Config:
     init_b2_min = -3.0
     init_b2_max = 3.0
 
-    generator_trainer_learning_rate = 3e-1
+    generator_backbone_gain = 2.5
+    generator_target_std = 25.0
+    generator_trainer_learning_rate = 2e-2
+    generator_realism_weight = 0.05
+    generator_scale_weight = 0.0
+    generator_initial_residual_scale = 0.2
+    generator_max_residual = 4.0
+    generator_drift_weight = 0.0
+    generator_coeff_smoothness_weight = 0.0
+    generator_y_smoothness_weight = 0.0
+    generator_grad_clip = 1.0
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
-    adversarial_epochs = 3
+    adversarial_epochs = 20
     forcast_trainer_epoch = 10
-    generator_epoch = 10
+    generator_epoch = 20
     grade_search_epochs = 10
     input_dim: int = None  # to be set in main based on selected features
     
     @staticmethod
     def set_input_dim( features: list[XFeature]):
         num_features = len(features)
-        # Layout: [hour_idx, x1..xN]
-        Config.input_dim = 1 + num_features
+        # Layout after SequenceBuilder: [hour_idx, x1..xN, historical_y]
+        Config.input_dim = 2 + num_features
 
 
     noise_std: float = 2
@@ -102,7 +112,17 @@ class Config:
             "init_b1_max": Config.init_b1_max,
             "init_b2_min": Config.init_b2_min,
             "init_b2_max": Config.init_b2_max,
+            "generator_backbone_gain": Config.generator_backbone_gain,
+            "generator_target_std": Config.generator_target_std,
             "generator_trainer_learning_rate": Config.generator_trainer_learning_rate,
+            "generator_realism_weight": Config.generator_realism_weight,
+            "generator_scale_weight": Config.generator_scale_weight,
+            "generator_initial_residual_scale": Config.generator_initial_residual_scale,
+            "generator_max_residual": Config.generator_max_residual,
+            "generator_drift_weight": Config.generator_drift_weight,
+            "generator_coeff_smoothness_weight": Config.generator_coeff_smoothness_weight,
+            "generator_y_smoothness_weight": Config.generator_y_smoothness_weight,
+            "generator_grad_clip": Config.generator_grad_clip,
             "forcaster_trainer_learning_rate": Config.forcaster_trainer_learning_rate,
             "generator_clamp_min": Config.generator_clamp_min,
             "generator_clamp_max": Config.generator_clamp_max,

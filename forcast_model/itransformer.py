@@ -90,6 +90,8 @@ class ITransformerForcaster(BaseForecastModel):
         self.epochs = 1
         config.class_strategy = "projection"
         self.batch_size = self.config.batch_size
+        self.input_dim = input_dim
+        self.target_channel = input_dim - 1
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.model = Model(config).to(self.device)
@@ -112,10 +114,13 @@ class ITransformerForcaster(BaseForecastModel):
                 "dropout": [0.1, 0.2],
             }
     def forward(self, X)-> torch.Tensor:
+        if X.shape[-1] != self.input_dim:
+            raise RuntimeError(f"Expected {self.input_dim} features, got {X.shape[-1]}")
+
         B = X.shape[0]
         x_dec = torch.zeros(B, self.pred_len, X.shape[2], device=X.device)
         out = self.model(X, None, x_dec, None)
-        return out[..., 0:1]
+        return out[..., self.target_channel:self.target_channel + 1]
 
     def train_mode(self):
         self.model.train()

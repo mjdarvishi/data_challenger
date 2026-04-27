@@ -27,14 +27,23 @@ class GeneratorTrainer:
             split: "PipelineSplitResult" = build_normalize_splitet_func()
             X_train, Y_train = split.X_train, split.Y_train
 
+            # X_train contains historical Y, so allow generator gradients through
+            # that history channel as well as the future Y target.
             Y_pred = forcast_trainer.model.forward(X_train)
 
-            loss = forcast_trainer.criterion(Y_pred, Y_train)
-            self.optimizer.zero_grad()
-            (-loss).backward()   # loss is already negated inside adversarial_loss
-            self.optimizer.step()
-            # self.gen_model.clamp_parameters()
+            forecast_loss = forcast_trainer.criterion(Y_pred, Y_train)
+            realism_loss = self.gen_model.regularization_loss()
+            generator_loss = -forecast_loss + self.config.generator_realism_weight * realism_loss
 
-            losses[step] = float(forcast_trainer.criterion(Y_pred, Y_train).item())
+            self.optimizer.zero_grad()
+            generator_loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                self.gen_model.parameters(),
+                self.config.generator_grad_clip,
+            )
+            self.optimizer.step()
+            self.gen_model.clamp_parameters()
+
+            losses[step] = float(forecast_loss.item())
 
         return losses

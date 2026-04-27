@@ -66,13 +66,20 @@ class PipelineTracker:
             x_values = X_raw[i, 1:].detach().cpu().tolist()
             y = float(Y_raw[i].item())
 
+            b0_used = None
+            b_values = None
+            if hasattr(gen_model, "b0") and hasattr(gen_model, "b"):
+                hour_idx = hour % Config.hours_per_week()
+                b0_used = float(gen_model.b0[hour_idx].detach().cpu().item())
+                b_values = gen_model.b[:, hour_idx].detach().cpu().tolist()
+
             data_points.append(
                 DataPoint(
                     global_time=global_time,
                     hour_of_week=hour,
                     x_values=x_values,
-                    b0_used=None,      # no longer valid (neural model)
-                    b_values=None,     # no longer valid
+                    b0_used=b0_used,
+                    b_values=b_values,
                     y=y,
                 )
             )
@@ -123,6 +130,26 @@ class PipelineTracker:
             }
 
         params = {}
+
+        if hasattr(gen_model, "b0"):
+            params["b0"] = self._safe(gen_model.b0).numpy().tolist()
+
+        if hasattr(gen_model, "b"):
+            params["b"] = self._safe(gen_model.b).numpy().tolist()
+
+        if hasattr(gen_model, "residual_scale"):
+            params["residual_scale"] = float(
+                self._safe(gen_model.residual_scale).numpy().item()
+            )
+
+        if hasattr(gen_model, "residual_encoder"):
+            params["residual_encoder"] = safe_state_dict(gen_model.residual_encoder)
+
+        if hasattr(gen_model, "temporal_filter"):
+            params["temporal_filter"] = safe_state_dict(gen_model.temporal_filter)
+
+        if hasattr(gen_model, "residual_head"):
+            params["residual_head"] = safe_state_dict(gen_model.residual_head)
 
         # Encoder
         if hasattr(gen_model, "encoder"):

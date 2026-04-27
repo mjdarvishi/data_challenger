@@ -44,12 +44,12 @@ class DatasetBuilder:
             raise ValueError("Feature mismatch")
 
         # ================================
-        # Generator expects [B, T, F]
+        # Generator supports batched sequence input [B, T, F]
         # ================================
         X_seq = X.unsqueeze(0)  # [1, T, F]
 
         # ================================
-        # Generate Y using neural generator
+        # Generate Y using the hourly ground-truth generator
         # ================================
         Y_seq = gen_model(X_seq)  # [1, T]
 
