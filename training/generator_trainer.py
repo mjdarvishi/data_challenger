@@ -20,18 +20,34 @@ class GeneratorTrainer:
         self,
         forcast_trainer: ForecastTrainer,
         build_normalize_splitet_func: callable,
-    ) -> dict[int, float]:
+    ) -> dict[int, dict[str, float]]:
         losses = {}
 
         for step in range(self.config.generator_epoch):
             split: "PipelineSplitResult" = build_normalize_splitet_func()
-            X_train, Y_train = split.X_train, split.Y_train
 
             # X_train contains historical Y, so allow generator gradients through
             # that history channel as well as the future Y target.
-            Y_pred = forcast_trainer.model.forward(X_train)
-
-            forecast_loss = forcast_trainer.criterion(Y_pred, Y_train)
+            train_loss = self._forecast_loss(
+                forcast_trainer,
+                split.X_train,
+                split.Y_train,
+            )
+            val_loss = self._forecast_loss(
+                forcast_trainer,
+                split.X_val,
+                split.Y_val,
+            )
+            test_loss = self._forecast_loss(
+                forcast_trainer,
+                split.X_test,
+                split.Y_test,
+            )
+            forecast_loss = (
+                self.config.generator_train_loss_weight * train_loss
+                + self.config.generator_val_loss_weight * val_loss
+                + self.config.generator_test_loss_weight * test_loss
+            )
             realism_loss = self.gen_model.regularization_loss()
             generator_loss = -forecast_loss + self.config.generator_realism_weight * realism_loss
 
@@ -44,6 +60,20 @@ class GeneratorTrainer:
             self.optimizer.step()
             self.gen_model.clamp_parameters()
 
-            losses[step] = float(forecast_loss.item())
+            losses[step] = {
+                "weighted": float(forecast_loss.item()),
+                "train": float(train_loss.item()),
+                "val": float(val_loss.item()),
+                "test": float(test_loss.item()),
+            }
 
         return losses
+
+    def _forecast_loss(
+        self,
+        forcast_trainer: ForecastTrainer,
+        X: torch.Tensor,
+        Y: torch.Tensor,
+    ) -> torch.Tensor:
+        Y_pred = forcast_trainer.model.forward(X)
+        return forcast_trainer.criterion(Y_pred, Y)

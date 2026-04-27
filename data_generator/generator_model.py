@@ -14,21 +14,30 @@ class GeneratorModel(nn.Module):
     taking over the whole data-generating process.
     """
 
-    def __init__(self, num_features: int, hidden_dim: int = 32):
+    def __init__(
+        self,
+        num_features: int,
+        hidden_dim: int = 32,
+        feature_names: list[str] | None = None,
+    ):
         super().__init__()
         self.config = Config()
 
         if num_features <= 0:
             raise ValueError("GeneratorModel requires at least one feature")
+        if feature_names is not None and len(feature_names) != num_features:
+            raise ValueError("feature_names length must match num_features")
 
         self.num_features = num_features
         self.hidden_dim = hidden_dim
+        self.feature_names = feature_names or [f"x{i + 1}" for i in range(num_features)]
 
         b0, b = self.create_initial_b_params()
         self.b0 = nn.Parameter(torch.tensor(b0, dtype=torch.float32))
         self.b = nn.Parameter(torch.tensor(b, dtype=torch.float32))
         self.register_buffer("initial_b0", self.b0.detach().clone())
         self.register_buffer("initial_b", self.b.detach().clone())
+        self.feature_logits = nn.Parameter(torch.randn(num_features, dtype=torch.float32) * 0.01)
 
         residual_input_dim = num_features + 4
         self.residual_encoder = nn.Sequential(
@@ -47,9 +56,17 @@ class GeneratorModel(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, 1),
         )
-        self.residual_scale = nn.Parameter(torch.tensor(0.2, dtype=torch.float32))
-        self.max_residual = 3.0
-        self.feature_scale = float(np.sqrt(self.num_features))
+        self.residual_scale = nn.Parameter(
+            torch.tensor(
+                self.config.generator_initial_residual_scale,
+                dtype=torch.float32,
+            )
+        )
+        self.max_residual = float(self.config.generator_max_residual)
+        self.future_shift_scale = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+        self.future_shift_coeffs = nn.Parameter(
+            torch.randn(num_features, dtype=torch.float32) * 0.05
+        )
         self._last_residual: torch.Tensor | None = None
         self._last_y: torch.Tensor | None = None
 
@@ -90,7 +107,8 @@ class GeneratorModel(nn.Module):
 
         base = self._linear_backbone(X_model, hours)
         residual = self._neural_residual(X_model, hours)
-        y = base + residual
+        future_shift = self._future_shift(X_model)
+        y = base + residual + future_shift
 
         self._last_residual = residual
         self._last_y = y
@@ -111,7 +129,11 @@ class GeneratorModel(nn.Module):
         x_seq = x_features.view(1, 1, -1)
         hours = torch.tensor([hour], device=x_features.device)
         x_model = self._standardize_sequence_features(x_seq)
-        y = self._linear_backbone(x_model, hours) + self._neural_residual(x_model, hours)
+        y = (
+            self._linear_backbone(x_model, hours)
+            + self._neural_residual(x_model, hours)
+            + self._future_shift(x_model)
+        )
         return y.squeeze()
 
     def _normalize_hour_idx(self, hour_idx: int | torch.Tensor) -> int:
@@ -131,6 +153,10 @@ class GeneratorModel(nn.Module):
                 self.config.generator_clamp_max,
             )
             self.residual_scale.clamp_(0.0, self.max_residual)
+            self.future_shift_scale.clamp_(
+                -self.config.generator_max_residual,
+                self.config.generator_max_residual,
+            )
 
     def regularization_loss(self) -> torch.Tensor:
         if self._last_residual is None:
@@ -146,6 +172,7 @@ class GeneratorModel(nn.Module):
             smoothness = residual.new_tensor(0.0)
 
         scale_penalty = self.residual_scale.pow(2)
+        future_shift_penalty = self.future_shift_scale.pow(2)
         if self._last_y is not None and self._last_y.numel() > 1:
             y_std = self._last_y.std(unbiased=False)
             target_std = residual.new_tensor(self.config.generator_target_std)
@@ -163,10 +190,12 @@ class GeneratorModel(nn.Module):
             + 0.5 * smoothness
             + 0.1 * centered
             + 0.01 * scale_penalty
+            + 0.01 * future_shift_penalty
             + self.config.generator_scale_weight * y_scale
             + self.config.generator_drift_weight * drift
             + self.config.generator_coeff_smoothness_weight * coeff_smoothness
             + self.config.generator_y_smoothness_weight * y_smoothness
+            + self.config.generator_feature_selection_weight * self._feature_selection_loss()
         )
 
     def create_initial_b_params(self):
@@ -192,15 +221,61 @@ class GeneratorModel(nn.Module):
         return b0, b
 
     def _linear_backbone(self, X_seq: torch.Tensor, hours: torch.Tensor) -> torch.Tensor:
-        coeffs = self.b[:, hours].transpose(0, 1).to(X_seq.device)
+        gates = self.feature_gates().to(X_seq.device)
+        coeffs = (self.b[:, hours] * gates.unsqueeze(1)).transpose(0, 1).to(X_seq.device)
         bias = self.b0[hours].to(X_seq.device)
         contribution = torch.einsum("btf,tf->bt", X_seq, coeffs)
-        return bias.unsqueeze(0) + self.config.generator_backbone_gain * contribution / self.feature_scale
+        feature_scale = torch.sqrt(gates.sum().clamp_min(1.0))
+        return bias.unsqueeze(0) + self.config.generator_backbone_gain * contribution / feature_scale
 
     def _coefficient_smoothness(self) -> torch.Tensor:
         b0_diff = torch.diff(self.b0, append=self.b0[:1])
-        b_diff = torch.diff(self.b, dim=1, append=self.b[:, :1])
+        effective_b = self.effective_b()
+        b_diff = torch.diff(effective_b, dim=1, append=effective_b[:, :1])
         return b0_diff.pow(2).mean() + b_diff.pow(2).mean()
+
+    def feature_probabilities(self) -> torch.Tensor:
+        temperature = max(float(self.config.generator_feature_selection_temperature), 1e-3)
+        return torch.sigmoid(self.feature_logits / temperature)
+
+    def feature_gates(self) -> torch.Tensor:
+        probs = self.feature_probabilities()
+        top_k = self._backbone_top_k()
+
+        if top_k >= self.num_features:
+            return torch.ones_like(probs)
+
+        _, indices = torch.topk(probs, k=top_k)
+        hard_gates = torch.zeros_like(probs)
+        hard_gates.scatter_(0, indices, 1.0)
+        return hard_gates + probs - probs.detach()
+
+    def selected_feature_indices(self) -> list[int]:
+        probs = self.feature_probabilities().detach()
+        return torch.topk(probs, k=self._backbone_top_k()).indices.cpu().tolist()
+
+    def selected_feature_names(self) -> list[str]:
+        return [self.feature_names[i] for i in self.selected_feature_indices()]
+
+    def effective_b(self) -> torch.Tensor:
+        return self.b * self.feature_gates().unsqueeze(1)
+
+    def _backbone_top_k(self) -> int:
+        configured = self.config.generator_backbone_top_k
+        if configured is None:
+            return self.num_features
+
+        return max(1, min(int(configured), self.num_features))
+
+    def _feature_selection_loss(self) -> torch.Tensor:
+        probs = self.feature_probabilities()
+        target_active_ratio = probs.new_tensor(self._backbone_top_k() / self.num_features)
+        active_count_loss = (probs.mean() - target_active_ratio).pow(2)
+        entropy = -(
+            probs * torch.log(probs.clamp_min(1e-6))
+            + (1.0 - probs) * torch.log((1.0 - probs).clamp_min(1e-6))
+        ).mean()
+        return active_count_loss + self.config.generator_feature_entropy_weight * entropy
 
     @staticmethod
     def _target_roughness(y: torch.Tensor) -> torch.Tensor:
@@ -228,6 +303,31 @@ class GeneratorModel(nn.Module):
         raw_residual = self.residual_head(h).squeeze(-1)
         bounded_residual = torch.tanh(raw_residual)
         return torch.clamp(self.residual_scale, 0.0, self.max_residual) * bounded_residual
+
+    def _future_shift(self, X_seq: torch.Tensor) -> torch.Tensor:
+        if self.config.generator_future_shift_weight <= 0.0 or X_seq.shape[1] <= 1:
+            return X_seq.new_zeros(X_seq.shape[:2])
+
+        progress = torch.linspace(
+            0.0,
+            1.0,
+            X_seq.shape[1],
+            device=X_seq.device,
+            dtype=X_seq.dtype,
+        )
+        width = max(float(self.config.generator_future_shift_width), 1e-3)
+        start = float(self.config.generator_future_shift_start)
+        future_gate = torch.sigmoid((progress - start) / width).unsqueeze(0)
+
+        coeffs = torch.tanh(self.future_shift_coeffs).to(X_seq.device)
+        raw_shift = torch.einsum("btf,f->bt", X_seq, coeffs)
+        raw_shift = raw_shift / torch.sqrt(X_seq.new_tensor(self.num_features).clamp_min(1.0))
+        scale = torch.clamp(
+            self.future_shift_scale,
+            -self.max_residual,
+            self.max_residual,
+        )
+        return self.config.generator_future_shift_weight * scale * future_gate * raw_shift
 
     def _hour_context(self, hours: torch.Tensor) -> torch.Tensor:
         hours = hours.to(dtype=torch.float32)

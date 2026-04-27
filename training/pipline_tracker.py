@@ -71,7 +71,10 @@ class PipelineTracker:
             if hasattr(gen_model, "b0") and hasattr(gen_model, "b"):
                 hour_idx = hour % Config.hours_per_week()
                 b0_used = float(gen_model.b0[hour_idx].detach().cpu().item())
-                b_values = gen_model.b[:, hour_idx].detach().cpu().tolist()
+                if hasattr(gen_model, "effective_b"):
+                    b_values = gen_model.effective_b()[:, hour_idx].detach().cpu().tolist()
+                else:
+                    b_values = gen_model.b[:, hour_idx].detach().cpu().tolist()
 
             data_points.append(
                 DataPoint(
@@ -137,9 +140,39 @@ class PipelineTracker:
         if hasattr(gen_model, "b"):
             params["b"] = self._safe(gen_model.b).numpy().tolist()
 
+        if hasattr(gen_model, "feature_logits"):
+            params["feature_logits"] = self._safe(gen_model.feature_logits).numpy().tolist()
+
+        if hasattr(gen_model, "feature_probabilities"):
+            params["feature_probabilities"] = (
+                self._safe(gen_model.feature_probabilities()).numpy().tolist()
+            )
+
+        if hasattr(gen_model, "feature_gates"):
+            params["feature_gates"] = self._safe(gen_model.feature_gates()).numpy().tolist()
+
+        if hasattr(gen_model, "selected_feature_indices"):
+            params["selected_feature_indices"] = gen_model.selected_feature_indices()
+
+        if hasattr(gen_model, "selected_feature_names"):
+            params["selected_feature_names"] = gen_model.selected_feature_names()
+
+        if hasattr(gen_model, "effective_b"):
+            params["effective_b"] = self._safe(gen_model.effective_b()).numpy().tolist()
+
         if hasattr(gen_model, "residual_scale"):
             params["residual_scale"] = float(
                 self._safe(gen_model.residual_scale).numpy().item()
+            )
+
+        if hasattr(gen_model, "future_shift_scale"):
+            params["future_shift_scale"] = float(
+                self._safe(gen_model.future_shift_scale).numpy().item()
+            )
+
+        if hasattr(gen_model, "future_shift_coeffs"):
+            params["future_shift_coeffs"] = (
+                self._safe(gen_model.future_shift_coeffs).numpy().tolist()
             )
 
         if hasattr(gen_model, "residual_encoder"):

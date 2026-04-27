@@ -22,7 +22,10 @@ def main(
     num_features = len(x_registery.selected_generators)
     Config.set_input_dim(features)
 
-    gen_model = GeneratorModel(num_features=num_features)
+    gen_model = GeneratorModel(
+        num_features=num_features,
+        feature_names=[gen.name for gen in x_registery.selected_generators],
+    )
     grid_engine = GridSearchEngine(
         model_class=forcaster_cls,
         model_fixed_kwargs={"input_dim": Config.input_dim},

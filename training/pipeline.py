@@ -221,6 +221,7 @@ class BasePipeline:
         _, train_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_train, split.Y_train)
         _, val_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_val, split.Y_val)
         pred, test_eval_mse = self.forcast_trainer.evaluate_pred_mse(split.X_test, split.Y_test)
+        mean_baseline_mse = self._mean_baseline_mse(split.Y_test)
         forecast_time = perf_counter() - forecast_start
         # =========================
         # 6. FREEZE MODEL
@@ -273,7 +274,11 @@ class BasePipeline:
             f"forecast: {forecast_time:.2f}s | generator: {generator_time:.2f}s | "
             f"train MSE(eval): {train_eval_mse:.4f} | "
             f"val MSE(eval): {val_eval_mse:.4f} | "
-            f"test MSE(eval): {test_eval_mse:.4f}"
+            f"test MSE(eval): {test_eval_mse:.4f} | "
+            f"mean baseline: {mean_baseline_mse:.4f} | "
+            f"gain: {test_eval_mse / max(mean_baseline_mse, 1e-8):.2f}x | "
+            f"future shift: {self._format_future_shift()} | "
+            f"selected: {self._format_selected_features()}"
         )
 
     def run(self):
@@ -293,3 +298,26 @@ class BasePipeline:
             for name, param in self.gen_model.named_parameters():
                 grad_norm = param.grad.norm().item() if param.grad is not None else 0.0
                 print(f"  {name}: grad_norm={grad_norm:.6f}")
+
+    def _format_selected_features(self) -> str:
+        if not hasattr(self.gen_model, "selected_feature_indices"):
+            return "n/a"
+
+        selected_indices = self.gen_model.selected_feature_indices()
+        probs = self.gen_model.feature_probabilities().detach().cpu()
+        parts = [
+            f"{self.gen_model.feature_names[i]}={float(probs[i]):.2f}"
+            for i in selected_indices
+        ]
+        return ", ".join(parts)
+
+    def _format_future_shift(self) -> str:
+        if not hasattr(self.gen_model, "future_shift_scale"):
+            return "n/a"
+
+        return f"{float(self.gen_model.future_shift_scale.detach().cpu()):.2f}"
+
+    @staticmethod
+    def _mean_baseline_mse(Y: torch.Tensor) -> float:
+        baseline = torch.zeros_like(Y)
+        return torch.mean((baseline - Y) ** 2).item()

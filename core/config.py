@@ -55,6 +55,16 @@ class Config:
     generator_coeff_smoothness_weight = 0.05
     generator_y_smoothness_weight = 0.02
     generator_grad_clip = 1.0
+    generator_backbone_top_k: int | None = 4
+    generator_feature_selection_temperature = 0.7
+    generator_feature_selection_weight = 0.02
+    generator_feature_entropy_weight = 0.005
+    generator_train_loss_weight = 0.4
+    generator_val_loss_weight = 0.6
+    generator_test_loss_weight = 0.0
+    generator_future_shift_weight = 1.0
+    generator_future_shift_start = 0.8
+    generator_future_shift_width = 0.03
     forcaster_trainer_learning_rate = 1e-4
     generator_clamp_min = -10.0
     generator_clamp_max = 10.0
@@ -123,6 +133,16 @@ class Config:
             "generator_coeff_smoothness_weight": Config.generator_coeff_smoothness_weight,
             "generator_y_smoothness_weight": Config.generator_y_smoothness_weight,
             "generator_grad_clip": Config.generator_grad_clip,
+            "generator_backbone_top_k": Config.generator_backbone_top_k,
+            "generator_feature_selection_temperature": Config.generator_feature_selection_temperature,
+            "generator_feature_selection_weight": Config.generator_feature_selection_weight,
+            "generator_feature_entropy_weight": Config.generator_feature_entropy_weight,
+            "generator_train_loss_weight": Config.generator_train_loss_weight,
+            "generator_val_loss_weight": Config.generator_val_loss_weight,
+            "generator_test_loss_weight": Config.generator_test_loss_weight,
+            "generator_future_shift_weight": Config.generator_future_shift_weight,
+            "generator_future_shift_start": Config.generator_future_shift_start,
+            "generator_future_shift_width": Config.generator_future_shift_width,
             "forcaster_trainer_learning_rate": Config.forcaster_trainer_learning_rate,
             "generator_clamp_min": Config.generator_clamp_min,
             "generator_clamp_max": Config.generator_clamp_max,
