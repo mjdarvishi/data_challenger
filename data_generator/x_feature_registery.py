@@ -24,18 +24,52 @@ class XFeatureRegistery:
     def __init__(self):
         self.generator_registry: Dict[XFeature, XFeatureGenerator] = {}
         self.selected_generators: List[XFeatureGenerator] = []
+        self.selected_features: List[XFeature] = []
+        self.feature_dependencies: Dict[XFeature, List[XFeature]] = {
+            XFeature.X9: [XFeature.X1, XFeature.X2, XFeature.X3, XFeature.X4],
+            XFeature.X14: [XFeature.X11, XFeature.X13],
+        }
         self._register_default_generators()
         self.config = Config()
 
     def select_generators(self, generator_names: List[XFeature]):
+        generator_names = self.expand_with_dependencies(generator_names)
         missing = [
             name for name in generator_names if name not in self.generator_registry
         ]
         if missing:
             raise ValueError(f"Unknown generators: {missing}")
+        self.selected_features = generator_names
         self.selected_generators = [
             self.generator_registry[name] for name in generator_names
         ]
+
+    def expand_with_dependencies(self, generator_names: List[XFeature]) -> List[XFeature]:
+        expanded: List[XFeature] = []
+        seen: set[XFeature] = set()
+
+        def add(feature: XFeature):
+            for dependency in self.feature_dependencies.get(feature, []):
+                add(dependency)
+            if feature not in seen:
+                seen.add(feature)
+                expanded.append(feature)
+
+        for name in generator_names:
+            add(name)
+
+        return expanded
+
+    def selected_feature_dependency_names(self) -> Dict[str, List[str]]:
+        return {
+            feature.value: [
+                dependency.value
+                for dependency in dependencies
+                if dependency in self.selected_features
+            ]
+            for feature, dependencies in self.feature_dependencies.items()
+            if feature in self.selected_features
+        }
 
     def _register_default_generators(self):
         self.generator_registry[XFeature.X1] = YearlySineGenerator(

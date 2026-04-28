@@ -17,14 +17,15 @@ def main(
     # setup_models()
 
     x_registery = XFeatureRegistery()
-    features_str = "_".join([f.name for f in features])
     x_registery.select_generators(features)
+    features_str = "_".join([f.name for f in x_registery.selected_features])
     num_features = len(x_registery.selected_generators)
-    Config.set_input_dim(features)
+    Config.set_input_dim(x_registery.selected_features)
 
     gen_model = GeneratorModel(
         num_features=num_features,
         feature_names=[gen.name for gen in x_registery.selected_generators],
+        feature_dependencies=x_registery.selected_feature_dependency_names(),
     )
     grid_engine = GridSearchEngine(
         model_class=forcaster_cls,

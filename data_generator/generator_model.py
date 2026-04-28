@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from core.config import Config
+from data_generator.dependency_aware_feature_selector import DependencyAwareFeatureSelector
 
 
 class GeneratorModel(nn.Module):
@@ -19,6 +20,7 @@ class GeneratorModel(nn.Module):
         num_features: int,
         hidden_dim: int = 32,
         feature_names: list[str] | None = None,
+        feature_dependencies: dict[str, list[str]] | None = None,
     ):
         super().__init__()
         self.config = Config()
@@ -31,13 +33,17 @@ class GeneratorModel(nn.Module):
         self.num_features = num_features
         self.hidden_dim = hidden_dim
         self.feature_names = feature_names or [f"x{i + 1}" for i in range(num_features)]
+        self.feature_selector = DependencyAwareFeatureSelector(
+            num_features=num_features,
+            feature_names=self.feature_names,
+            feature_dependencies=feature_dependencies,
+        )
 
         b0, b = self.create_initial_b_params()
         self.b0 = nn.Parameter(torch.tensor(b0, dtype=torch.float32))
         self.b = nn.Parameter(torch.tensor(b, dtype=torch.float32))
         self.register_buffer("initial_b0", self.b0.detach().clone())
         self.register_buffer("initial_b", self.b.detach().clone())
-        self.feature_logits = nn.Parameter(torch.randn(num_features, dtype=torch.float32) * 0.01)
 
         residual_input_dim = num_features + 4
         self.residual_encoder = nn.Sequential(
@@ -235,47 +241,29 @@ class GeneratorModel(nn.Module):
         return b0_diff.pow(2).mean() + b_diff.pow(2).mean()
 
     def feature_probabilities(self) -> torch.Tensor:
-        temperature = max(float(self.config.generator_feature_selection_temperature), 1e-3)
-        return torch.sigmoid(self.feature_logits / temperature)
+        return self.feature_selector.probabilities()
 
     def feature_gates(self) -> torch.Tensor:
-        probs = self.feature_probabilities()
-        top_k = self._backbone_top_k()
-
-        if top_k >= self.num_features:
-            return torch.ones_like(probs)
-
-        _, indices = torch.topk(probs, k=top_k)
-        hard_gates = torch.zeros_like(probs)
-        hard_gates.scatter_(0, indices, 1.0)
-        return hard_gates + probs - probs.detach()
+        return self.feature_selector.gates()
 
     def selected_feature_indices(self) -> list[int]:
-        probs = self.feature_probabilities().detach()
-        return torch.topk(probs, k=self._backbone_top_k()).indices.cpu().tolist()
+        return self.feature_selector.selected_indices()
 
     def selected_feature_names(self) -> list[str]:
-        return [self.feature_names[i] for i in self.selected_feature_indices()]
+        return self.feature_selector.selected_names()
 
     def effective_b(self) -> torch.Tensor:
         return self.b * self.feature_gates().unsqueeze(1)
 
     def _backbone_top_k(self) -> int:
-        configured = self.config.generator_backbone_top_k
-        if configured is None:
-            return self.num_features
-
-        return max(1, min(int(configured), self.num_features))
+        return self.feature_selector.top_k()
 
     def _feature_selection_loss(self) -> torch.Tensor:
-        probs = self.feature_probabilities()
-        target_active_ratio = probs.new_tensor(self._backbone_top_k() / self.num_features)
-        active_count_loss = (probs.mean() - target_active_ratio).pow(2)
-        entropy = -(
-            probs * torch.log(probs.clamp_min(1e-6))
-            + (1.0 - probs) * torch.log((1.0 - probs).clamp_min(1e-6))
-        ).mean()
-        return active_count_loss + self.config.generator_feature_entropy_weight * entropy
+        return self.feature_selector.selection_loss()
+
+    @property
+    def feature_logits(self) -> torch.Tensor:
+        return self.feature_selector.feature_logits
 
     @staticmethod
     def _target_roughness(y: torch.Tensor) -> torch.Tensor:

@@ -143,6 +143,9 @@ class PipelineTracker:
         if hasattr(gen_model, "feature_logits"):
             params["feature_logits"] = self._safe(gen_model.feature_logits).numpy().tolist()
 
+        if hasattr(gen_model, "feature_selector"):
+            params["feature_dependencies"] = gen_model.feature_selector.feature_dependencies
+
         if hasattr(gen_model, "feature_probabilities"):
             params["feature_probabilities"] = (
                 self._safe(gen_model.feature_probabilities()).numpy().tolist()

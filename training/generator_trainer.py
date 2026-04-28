@@ -25,23 +25,26 @@ class GeneratorTrainer:
 
         for step in range(self.config.generator_epoch):
             split: "PipelineSplitResult" = build_normalize_splitet_func()
+            X_train, Y_train = self._sample_batch(split.X_train, split.Y_train)
+            X_val, Y_val = self._sample_batch(split.X_val, split.Y_val)
+            X_test, Y_test = self._sample_batch(split.X_test, split.Y_test)
 
             # X_train contains historical Y, so allow generator gradients through
             # that history channel as well as the future Y target.
             train_loss = self._forecast_loss(
                 forcast_trainer,
-                split.X_train,
-                split.Y_train,
+                X_train,
+                Y_train,
             )
             val_loss = self._forecast_loss(
                 forcast_trainer,
-                split.X_val,
-                split.Y_val,
+                X_val,
+                Y_val,
             )
             test_loss = self._forecast_loss(
                 forcast_trainer,
-                split.X_test,
-                split.Y_test,
+                X_test,
+                Y_test,
             )
             forecast_loss = (
                 self.config.generator_train_loss_weight * train_loss
@@ -76,4 +79,17 @@ class GeneratorTrainer:
         Y: torch.Tensor,
     ) -> torch.Tensor:
         Y_pred = forcast_trainer.model.forward(X)
-        return forcast_trainer.criterion(Y_pred, Y)
+        target = Y
+        if target.dim() == Y_pred.dim() - 1:
+            target = target.unsqueeze(-1)
+
+        return forcast_trainer.criterion(Y_pred, target)
+
+    def _sample_batch(
+        self,
+        X: torch.Tensor,
+        Y: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        batch_size = min(int(self.config.batch_size), X.shape[0])
+        indices = torch.randperm(X.shape[0], device=X.device)[:batch_size]
+        return X.index_select(0, indices), Y.index_select(0, indices)
