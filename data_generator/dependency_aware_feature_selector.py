@@ -43,12 +43,22 @@ class DependencyAwareFeatureSelector(nn.Module):
         return hard_gates + probs - probs.detach()
 
     def selected_indices(self) -> list[int]:
-        probs = self.probabilities().detach()
-        primary_indices = torch.topk(probs, k=self.top_k()).indices
+        primary_indices = torch.tensor(
+            self.primary_selected_indices(),
+            device=self.feature_logits.device,
+            dtype=torch.long,
+        )
         return self.expand_indices(primary_indices).cpu().tolist()
+
+    def primary_selected_indices(self) -> list[int]:
+        probs = self.probabilities().detach()
+        return torch.topk(probs, k=self.top_k()).indices.cpu().tolist()
 
     def selected_names(self) -> list[str]:
         return [self.feature_names[i] for i in self.selected_indices()]
+
+    def primary_selected_names(self) -> list[str]:
+        return [self.feature_names[i] for i in self.primary_selected_indices()]
 
     def selection_loss(self) -> torch.Tensor:
         probs = self.probabilities()

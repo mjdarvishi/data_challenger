@@ -45,29 +45,28 @@ class Config:
     init_b2_max = 3.0
 
     generator_backbone_gain = 1
-    generator_target_std = 25.0
+    generator_target_std = 250.0
     generator_trainer_learning_rate = 1e-2
-    generator_realism_weight = 0.1
-    generator_scale_weight = 0.05
-    generator_initial_residual_scale = 0.2
-    generator_max_residual = 4.0
-    generator_drift_weight = 0.05
-    generator_coeff_smoothness_weight = 0.05
-    generator_y_smoothness_weight = 0.02
-    generator_grad_clip = 1.0
-    generator_backbone_top_k: int | None = 4
+    generator_realism_weight = 1.0
+    generator_scale_weight = 0.0
+    generator_initial_residual_scale = 1.0
+    generator_max_residual = 20.0
+    generator_drift_weight = 0.0
+    generator_coeff_smoothness_weight = 0.0
+    generator_y_smoothness_weight = 0.0
+    generator_grad_clip = 5.0
+    generator_backbone_top_k: int | None = 6
     generator_feature_selection_temperature = 0.7
     generator_feature_selection_weight = 0.02
     generator_feature_entropy_weight = 0.005
-    generator_train_loss_weight = 0.4
-    generator_val_loss_weight = 0.6
-    generator_test_loss_weight = 0.0
     generator_future_shift_weight = 0.0
-    generator_future_shift_start = 0.8
-    generator_future_shift_width = 0.03
+    generator_initial_future_shift_scale = 0.0
+    generator_future_shift_coeff_init_std = 0.5
+    generator_future_shift_start = -1.0
+    generator_future_shift_width = 0.25
     forcaster_trainer_learning_rate = 1e-4
-    generator_clamp_min = -10.0
-    generator_clamp_max = 10.0
+    generator_clamp_min = -50.0
+    generator_clamp_max = 50.0
     adversarial_epochs = 20
     forcast_trainer_epoch = 10
     generator_epoch = 20
@@ -137,10 +136,9 @@ class Config:
             "generator_feature_selection_temperature": Config.generator_feature_selection_temperature,
             "generator_feature_selection_weight": Config.generator_feature_selection_weight,
             "generator_feature_entropy_weight": Config.generator_feature_entropy_weight,
-            "generator_train_loss_weight": Config.generator_train_loss_weight,
-            "generator_val_loss_weight": Config.generator_val_loss_weight,
-            "generator_test_loss_weight": Config.generator_test_loss_weight,
             "generator_future_shift_weight": Config.generator_future_shift_weight,
+            "generator_initial_future_shift_scale": Config.generator_initial_future_shift_scale,
+            "generator_future_shift_coeff_init_std": Config.generator_future_shift_coeff_init_std,
             "generator_future_shift_start": Config.generator_future_shift_start,
             "generator_future_shift_width": Config.generator_future_shift_width,
             "forcaster_trainer_learning_rate": Config.forcaster_trainer_learning_rate,

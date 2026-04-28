@@ -237,7 +237,7 @@ class BasePipeline:
         # so the model must always train against the current distribution rather than a fixed snapshot.
         
         # ges_loss=self.gen_trainer.fit_with_per_sample_mse(X_train_adv, Y_train_adv, self.forcast_trainer)
-        generator_loss=self.gen_trainer.fit(self.forcast_trainer,self._build_normalize_splitet)
+        generator_loss = self.gen_trainer.fit(self.forcast_trainer,self._build_normalize_splitet)
 
         # self._debug(step)
         generator_time = perf_counter() - generator_start
@@ -305,11 +305,19 @@ class BasePipeline:
 
         selected_indices = self.gen_model.selected_feature_indices()
         probs = self.gen_model.feature_probabilities().detach().cpu()
-        parts = [
+        active_parts = [
             f"{self.gen_model.feature_names[i]}={float(probs[i]):.2f}"
             for i in selected_indices
         ]
-        return ", ".join(parts)
+        if not hasattr(self.gen_model, "primary_selected_feature_indices"):
+            return ", ".join(active_parts)
+
+        primary_indices = self.gen_model.primary_selected_feature_indices()
+        primary_parts = [
+            f"{self.gen_model.feature_names[i]}={float(probs[i]):.2f}"
+            for i in primary_indices
+        ]
+        return f"primary [{', '.join(primary_parts)}] | active [{', '.join(active_parts)}]"
 
     def _format_future_shift(self) -> str:
         if not hasattr(self.gen_model, "future_shift_scale"):

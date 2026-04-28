@@ -21,7 +21,7 @@ class StepRecord:
     forecast_time: float
     generator_time: float
     model_losses: dict[int, float]
-    generator_loss: dict
+    generator_loss: dict[int, float]
     pred_mse: float
     params: dict
     data: list[DataPoint]

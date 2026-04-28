@@ -69,9 +69,15 @@ class GeneratorModel(nn.Module):
             )
         )
         self.max_residual = float(self.config.generator_max_residual)
-        self.future_shift_scale = nn.Parameter(torch.tensor(0.0, dtype=torch.float32))
+        self.future_shift_scale = nn.Parameter(
+            torch.tensor(
+                self.config.generator_initial_future_shift_scale,
+                dtype=torch.float32,
+            )
+        )
         self.future_shift_coeffs = nn.Parameter(
-            torch.randn(num_features, dtype=torch.float32) * 0.05
+            torch.randn(num_features, dtype=torch.float32)
+            * self.config.generator_future_shift_coeff_init_std
         )
         self._last_residual: torch.Tensor | None = None
         self._last_y: torch.Tensor | None = None
@@ -249,8 +255,14 @@ class GeneratorModel(nn.Module):
     def selected_feature_indices(self) -> list[int]:
         return self.feature_selector.selected_indices()
 
+    def primary_selected_feature_indices(self) -> list[int]:
+        return self.feature_selector.primary_selected_indices()
+
     def selected_feature_names(self) -> list[str]:
         return self.feature_selector.selected_names()
+
+    def primary_selected_feature_names(self) -> list[str]:
+        return self.feature_selector.primary_selected_names()
 
     def effective_b(self) -> torch.Tensor:
         return self.b * self.feature_gates().unsqueeze(1)
