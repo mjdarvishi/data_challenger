@@ -114,6 +114,84 @@ def _inverse_y(values, step_data):
     return arr * y_std + y_mean
 
 
+def _prediction_error_metrics(targets_raw, predictions_raw, step_data, *, original_scale=False, first_horizon_only=False):
+    targets = _inverse_y(targets_raw, step_data) if original_scale else _to_numpy(targets_raw)
+    predictions = _inverse_y(predictions_raw, step_data) if original_scale else _to_numpy(predictions_raw)
+
+    targets = np.squeeze(targets)
+    predictions = np.squeeze(predictions)
+    if targets.size == 0 or predictions.size == 0:
+        return None
+
+    if targets.ndim == 1:
+        targets = targets.reshape(-1, 1)
+    if predictions.ndim == 1:
+        predictions = predictions.reshape(-1, 1)
+
+    n_samples = min(targets.shape[0], predictions.shape[0])
+    n_horizons = min(targets.shape[1], predictions.shape[1])
+    if n_samples == 0 or n_horizons == 0:
+        return None
+
+    targets = targets[:n_samples, :n_horizons]
+    predictions = predictions[:n_samples, :n_horizons]
+
+    if first_horizon_only:
+        targets = targets[:, 0]
+        predictions = predictions[:, 0]
+
+    err = predictions - targets
+    mse = float(np.mean(err ** 2))
+    return {
+        "mse": mse,
+        "rmse": float(np.sqrt(mse)),
+    }
+
+
+def _prediction_range_metrics(targets_raw, predictions_raw, step_data, *, first_horizon_only=False):
+    target_norm = np.squeeze(_to_numpy(targets_raw))
+    pred_norm = np.squeeze(_to_numpy(predictions_raw))
+    target_orig = np.squeeze(_inverse_y(targets_raw, step_data))
+    pred_orig = np.squeeze(_inverse_y(predictions_raw, step_data))
+
+    if target_norm.size == 0 or pred_norm.size == 0 or target_orig.size == 0 or pred_orig.size == 0:
+        return None
+
+    arrays = [target_norm, pred_norm, target_orig, pred_orig]
+    reshaped = []
+    for arr in arrays:
+        if arr.ndim == 1:
+            arr = arr.reshape(-1, 1)
+        reshaped.append(arr)
+
+    n_samples = min(arr.shape[0] for arr in reshaped)
+    n_horizons = min(arr.shape[1] for arr in reshaped)
+    if n_samples == 0 or n_horizons == 0:
+        return None
+
+    sliced = [arr[:n_samples, :n_horizons] for arr in reshaped]
+    if first_horizon_only:
+        sliced = [arr[:, 0] for arr in sliced]
+
+    target_norm, pred_norm, target_orig, pred_orig = sliced
+    y_mean = float(step_data.get("Y_mean", 0.0))
+    y_std = float(step_data.get("Y_std", 1.0))
+
+    return {
+        "target_norm_min": float(np.min(target_norm)),
+        "target_norm_max": float(np.max(target_norm)),
+        "pred_norm_min": float(np.min(pred_norm)),
+        "pred_norm_max": float(np.max(pred_norm)),
+        "target_orig_min": float(np.min(target_orig)),
+        "target_orig_max": float(np.max(target_orig)),
+        "pred_orig_min": float(np.min(pred_orig)),
+        "pred_orig_max": float(np.max(pred_orig)),
+        "y_mean": y_mean,
+        "y_std": y_std,
+        "mse_multiplier": y_std ** 2,
+    }
+
+
 def _safe_mean(values):
     if not values:
         return 0.0
@@ -243,6 +321,137 @@ def _extract_param_vectors(step_data):
             series.append((key, values.reshape(-1)))
 
     return series
+
+
+def _selected_feature_text(step_data):
+    params = step_data.get("params", {})
+    names = params.get("selected_feature_names")
+    if isinstance(names, list) and names:
+        return ", ".join(str(name) for name in names)
+
+    indices = params.get("selected_feature_indices")
+    if isinstance(indices, list) and indices:
+        return ", ".join(f"x{int(idx) + 1}" for idx in indices if isinstance(idx, (int, float)))
+
+    return "n/a"
+
+
+def _numeric_summary(values):
+    arr = _to_numpy(values)
+    if arr.size == 0:
+        return "n/a"
+    flat = arr.reshape(-1)
+    return f"n={flat.size}, min={float(np.min(flat)):.4f}, max={float(np.max(flat)):.4f}, mean={float(np.mean(flat)):.4f}"
+
+
+def _top_feature_weights(values, names=None, top_n=5):
+    arr = _to_numpy(values).reshape(-1)
+    if arr.size == 0:
+        return "n/a"
+
+    labels = names if isinstance(names, list) and len(names) == arr.size else [f"x{i + 1}" for i in range(arr.size)]
+    order = np.argsort(arr)[::-1][:top_n]
+    return ", ".join(f"{labels[i]}={arr[i]:.3f}" for i in order)
+
+
+def _state_dict_summary(value):
+    if isinstance(value, dict):
+        return f"{len(value)} tensors"
+    if isinstance(value, list):
+        return f"{len(value)} blocks"
+    return "present"
+
+
+def _build_generator_params_panel(data):
+    rows = []
+    for step_data in data:
+        params = step_data.get("params", {})
+        if not isinstance(params, dict) or not params:
+            continue
+
+        selected_names = params.get("selected_feature_names")
+        row = {
+            "Epoch": step_data.get("step", len(rows)),
+            "Selected X features": _selected_feature_text(step_data),
+        }
+
+        if "selected_feature_indices" in params:
+            row["Selected indices"] = _format_scalar(params.get("selected_feature_indices"))
+        if "feature_probabilities" in params:
+            row["Top feature probabilities"] = _top_feature_weights(params.get("feature_probabilities"))
+        if "feature_gates" in params:
+            row["Top feature gates"] = _top_feature_weights(params.get("feature_gates"))
+        if "feature_logits" in params:
+            row["Feature logits"] = _numeric_summary(params.get("feature_logits"))
+        if "effective_b" in params:
+            row["Effective b"] = _numeric_summary(params.get("effective_b"))
+        if "b0" in params:
+            row["b0"] = _numeric_summary(params.get("b0"))
+        if "b" in params:
+            row["b"] = _numeric_summary(params.get("b"))
+
+        for key, label in (
+            ("residual_scale", "Residual scale"),
+            ("target_noise_scale", "Target noise scale"),
+            ("future_shift_scale", "Future shift scale"),
+        ):
+            if key in params:
+                row[label] = _format_scalar(params.get(key))
+
+        if "future_shift_coeffs" in params:
+            row["Future shift coeffs"] = _numeric_summary(params.get("future_shift_coeffs"))
+        if "feature_dependencies" in params:
+            deps = params.get("feature_dependencies")
+            row["Feature dependencies"] = len(deps) if isinstance(deps, (list, dict)) else _format_scalar(deps)
+
+        block_labels = {
+            "residual_encoder": "Residual encoder",
+            "temporal_filter": "Temporal filter",
+            "residual_head": "Residual head",
+            "encoder": "Encoder",
+            "rnn": "RNN",
+            "experts": "Experts",
+            "gate": "Gate",
+        }
+        for key, label in block_labels.items():
+            if key in params:
+                row[label] = _state_dict_summary(params.get(key))
+
+        rows.append(row)
+
+    if not rows:
+        return '<div class="empty-state">No generator params found in epoch data.</div>'
+
+    df = pd.DataFrame(rows)
+    ordered = [
+        "Epoch",
+        "Selected X features",
+        "Selected indices",
+        "Top feature probabilities",
+        "Top feature gates",
+        "Feature logits",
+        "Effective b",
+        "b0",
+        "b",
+        "Residual scale",
+        "Target noise scale",
+        "Future shift scale",
+        "Future shift coeffs",
+        "Feature dependencies",
+        "Residual encoder",
+        "Temporal filter",
+        "Residual head",
+        "Encoder",
+        "RNN",
+        "Experts",
+        "Gate",
+    ]
+    ordered = [col for col in ordered if col in df.columns]
+    return (
+        '<div class="summary-line"><strong>Generator params overview:</strong> '
+        'large neural weights are summarized by tensor/block counts; numeric params show compact ranges.</div>'
+        + _html_table(df[ordered], "No generator params found in epoch data.")
+    )
 
 
 def _global_time_series(step):
@@ -773,11 +982,30 @@ def _build_prediction_history_chart(data):
     subplot_titles = []
     for idx, step_data in enumerate(data):
         label_epoch = step_data.get("step", idx)
+        norm_metrics = _prediction_error_metrics(
+            step_data.get("targets"),
+            step_data.get("predictions"),
+            step_data,
+            original_scale=False,
+        )
+        original_metrics = _prediction_error_metrics(
+            step_data.get("targets"),
+            step_data.get("predictions"),
+            step_data,
+            original_scale=True,
+        )
+
+        title_parts = [f"Epoch {label_epoch}"]
         mse_test = step_data.get("test_eval_mse")
-        if mse_test is None:
-            subplot_titles.append(f"Epoch {label_epoch}")
-        else:
-            subplot_titles.append(f"Epoch {label_epoch} | test MSE={float(mse_test):.4f}")
+        if mse_test is not None:
+            title_parts.append(f"norm MSE={float(mse_test):.4f}")
+        elif norm_metrics:
+            title_parts.append(f"norm MSE={norm_metrics['mse']:.4f}")
+        if original_metrics:
+            title_parts.append(f"orig MSE={original_metrics['mse']:.4f}")
+            title_parts.append(f"orig RMSE={original_metrics['rmse']:.4f}")
+
+        subplot_titles.append(" | ".join(title_parts))
 
     fig = make_subplots(
         rows=rows,
@@ -1189,9 +1417,15 @@ def _compute_prediction_metrics(targets_raw, predictions_raw, step_data):
     # relative RMSE (as % of target std)
     t_std = float(np.std(t))
     rel_rmse = (rmse / t_std * 100) if t_std > 1e-10 else 100.0
+    norm_metrics = _prediction_error_metrics(targets_raw, predictions_raw, step_data, original_scale=False, first_horizon_only=True)
+    norm_mse = norm_metrics["mse"] if norm_metrics else None
+    norm_rmse = norm_metrics["rmse"] if norm_metrics else None
+    range_metrics = _prediction_range_metrics(targets_raw, predictions_raw, step_data, first_horizon_only=True)
 
     return dict(mse=mse, mae=mae, bias=bias, rmse=rmse,
-                dir_acc=dir_acc, r2=r2, rel_rmse=rel_rmse)
+                dir_acc=dir_acc, r2=r2, rel_rmse=rel_rmse,
+                norm_mse=norm_mse, norm_rmse=norm_rmse,
+                **(range_metrics or {}))
 
 
 def _grade_metrics(m):
@@ -1248,6 +1482,7 @@ def _build_prediction_quality_panel(data):
     .pq-sum-card .sl{font-size:12px;color:#6b7280;margin:0 0 4px}
     .pq-sum-card .sv{font-size:20px;font-weight:500;margin:0}
     .pq-sum-card .ss{font-size:11px;color:#9ca3af;margin:3px 0 0}
+    .pq-scale-note{font-size:12px;color:#4b5563;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:1rem}
     .pq-section-title{font-size:12px;font-weight:500;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin:1.25rem 0 .75rem}
     </style>"""
 
@@ -1266,12 +1501,13 @@ def _build_prediction_quality_panel(data):
     all_metrics = []
     for step_data in data:
         m = _compute_prediction_metrics(
-            step_data.get("predictions"),
             step_data.get("targets"),
+            step_data.get("predictions"),
             step_data,
         )
         if m:
             m["step"] = step_data.get("step", len(all_metrics))
+            m["selected_features"] = _selected_feature_text(step_data)
             all_metrics.append(m)
 
     if not all_metrics:
@@ -1280,18 +1516,44 @@ def _build_prediction_quality_panel(data):
     best_idx = max(range(len(all_metrics)), key=lambda i: all_metrics[i]["mse"])
     best_mse = all_metrics[best_idx]["mse"]
     first_mse = all_metrics[0]["mse"]
-    improvement = (best_mse - first_mse) / first_mse * 100  # higher is better
+    improvement = (best_mse - first_mse) / first_mse * 100 if first_mse else 0.0  # higher is better
     early_stop = best_idx < len(all_metrics) - 1  # val started falling after peak
     best_dir = max(m["dir_acc"] for m in all_metrics)
+    norm_mse_values = [m["norm_mse"] for m in all_metrics if m.get("norm_mse") is not None]
+    orig_mse_values = [m["mse"] for m in all_metrics]
+    target_orig_mins = [m["target_orig_min"] for m in all_metrics if "target_orig_min" in m]
+    target_orig_maxes = [m["target_orig_max"] for m in all_metrics if "target_orig_max" in m]
+    pred_orig_mins = [m["pred_orig_min"] for m in all_metrics if "pred_orig_min" in m]
+    pred_orig_maxes = [m["pred_orig_max"] for m in all_metrics if "pred_orig_max" in m]
+    y_std_values = [m["y_std"] for m in all_metrics if "y_std" in m]
+
+    def range_text(values, precision=4):
+        if not values:
+            return "n/a"
+        return f"{min(values):.{precision}f} - {max(values):.{precision}f}"
 
     summary = f"""<div class="pq-summary">
-      <div class="pq-sum-card"><p class="sl">Best test MSE</p><p class="sv">{best_mse:.4f}</p><p class="ss">epoch {all_metrics[best_idx]['step']}</p></div>
+      <div class="pq-sum-card"><p class="sl">Best original MSE</p><p class="sv">{best_mse:.4f}</p><p class="ss">epoch {all_metrics[best_idx]['step']}</p></div>
       <div class="pq-sum-card"><p class="sl">MSE improvement</p><p class="sv">{improvement:.1f}%</p><p class="ss">epoch 0 → best</p></div>
       <div class="pq-sum-card"><p class="sl">Best dir. accuracy</p><p class="sv">{best_dir:.0f}%</p><p class="ss">across all epochs</p></div>
       <div class="pq-sum-card"><p class="sl">Overfitting after ep.</p><p class="sv">{all_metrics[best_idx]['step'] if early_stop else '—'}</p><p class="ss">{'MSE rising' if early_stop else 'still improving'}</p></div>
     </div>"""
 
-    parts = [css, summary, '<p class="pq-section-title">Per-epoch breakdown</p>']
+    overview = f"""<div class="pq-summary">
+      <div class="pq-sum-card"><p class="sl">Norm MSE range</p><p class="sv" style="font-size:17px">{range_text(norm_mse_values)}</p><p class="ss">stored scale</p></div>
+      <div class="pq-sum-card"><p class="sl">Original MSE range</p><p class="sv" style="font-size:17px">{range_text(orig_mse_values)}</p><p class="ss">without normalization</p></div>
+      <div class="pq-sum-card"><p class="sl">Target range</p><p class="sv" style="font-size:17px">{range_text(target_orig_mins + target_orig_maxes, 2)}</p><p class="ss">original scale</p></div>
+      <div class="pq-sum-card"><p class="sl">Prediction range</p><p class="sv" style="font-size:17px">{range_text(pred_orig_mins + pred_orig_maxes, 2)}</p><p class="ss">original scale</p></div>
+      <div class="pq-sum-card"><p class="sl">Y std range</p><p class="sv" style="font-size:17px">{range_text(y_std_values)}</p><p class="ss">MSE multiplier = Y std squared</p></div>
+    </div>"""
+
+    scale_note = (
+        '<div class="pq-scale-note"><strong>Scale note:</strong> normalized MSE is measured on the stored normalized target. '
+        'Original MSE is computed after inverse scaling, so <strong>original MSE = normalized MSE x Y_std^2</strong> '
+        'and <strong>original RMSE = normalized RMSE x Y_std</strong>.</div>'
+    )
+
+    parts = [css, summary, overview, scale_note, '<p class="pq-section-title">Per-epoch breakdown</p>']
 
     for i, m in enumerate(all_metrics):
         cls, label = _grade_metrics(m)
@@ -1329,15 +1591,31 @@ def _build_prediction_quality_panel(data):
             verdict = "Forecaster winning. " + " ".join(parts_v) if parts_v else "Forecaster is handling the generated data well — generator needs improvement."
 
         bias_str = f"+{m['bias']:.4f}" if m["bias"] > 0 else f"{m['bias']:.4f}"
+        norm_mse_str = f"{m['norm_mse']:.4f}" if m["norm_mse"] is not None else "n/a"
+        target_orig_range = f"{m['target_orig_min']:.2f} to {m['target_orig_max']:.2f}" if "target_orig_min" in m else "n/a"
+        pred_orig_range = f"{m['pred_orig_min']:.2f} to {m['pred_orig_max']:.2f}" if "pred_orig_min" in m else "n/a"
+        target_norm_range = f"{m['target_norm_min']:.2f} to {m['target_norm_max']:.2f}" if "target_norm_min" in m else "n/a"
+        pred_norm_range = f"{m['pred_norm_min']:.2f} to {m['pred_norm_max']:.2f}" if "pred_norm_min" in m else "n/a"
+        y_std_str = f"{m['y_std']:.4f}" if "y_std" in m else "n/a"
+        multiplier_str = f"{m['mse_multiplier']:.4f}" if "mse_multiplier" in m else "n/a"
+        selected_features = m.get("selected_features", "n/a")
 
         parts.append(f"""<div class="pq-epoch">
           <div class="pq-header">
             <span class="pq-epoch-title">Epoch {m['step']}{star}</span>
-            <span class="pq-epoch-mse">MSE {m['mse']:.4f}</span>
+            <span class="pq-epoch-mse">Original MSE {m['mse']:.4f}</span>
             {badge(cls, label)}
             {badge(bias_cls, bias_dir)}
           </div>
           <div class="pq-metrics">
+            <div class="pq-metric"><p class="ml">MSE norm</p><p class="mv">{norm_mse_str}</p><p class="ms">stored scale</p></div>
+            <div class="pq-metric"><p class="ml">MSE original</p><p class="mv">{m['mse']:.4f}</p><p class="ms">without normalization</p></div>
+            <div class="pq-metric"><p class="ml">Selected X</p><p class="mv" style="font-size:13px">{selected_features}</p><p class="ms">generator features</p></div>
+            <div class="pq-metric"><p class="ml">Target range</p><p class="mv" style="font-size:13px">{target_orig_range}</p><p class="ms">original scale</p></div>
+            <div class="pq-metric"><p class="ml">Prediction range</p><p class="mv" style="font-size:13px">{pred_orig_range}</p><p class="ms">original scale</p></div>
+            <div class="pq-metric"><p class="ml">Target norm range</p><p class="mv" style="font-size:13px">{target_norm_range}</p><p class="ms">stored scale</p></div>
+            <div class="pq-metric"><p class="ml">Prediction norm range</p><p class="mv" style="font-size:13px">{pred_norm_range}</p><p class="ms">stored scale</p></div>
+            <div class="pq-metric"><p class="ml">Y std</p><p class="mv">{y_std_str}</p><p class="ms">MSE x {multiplier_str}</p></div>
             <div class="pq-metric"><p class="ml">RMSE</p><p class="mv">{m['rmse']:.4f}</p><p class="ms">error scale</p></div>
             <div class="pq-metric"><p class="ml">R²</p><p class="mv">{m['r2']:.3f}</p><p class="ms">variance explained</p></div>
             <div class="pq-metric"><p class="ml">Dir. accuracy</p><p class="mv">{m['dir_acc']:.1f}%</p><p class="ms">up/down correct</p></div>
@@ -1369,7 +1647,7 @@ def _render_section_html(section_id: str, data_bundle: dict):
         quality_html = _build_quality_panel(data)
         return quality_html + table_html + _fig_to_html(fig)
     if section_id == "params_exact":
-        return _fig_to_html(_build_params_exact_chart(data))
+        return _build_generator_params_panel(data) + _fig_to_html(_build_params_exact_chart(data))
 
     if section_id == "params_heat":
         return _fig_to_html(_build_params_heatmap_chart(data))

@@ -69,6 +69,13 @@ class GeneratorModel(nn.Module):
             )
         )
         self.max_residual = float(self.config.generator_max_residual)
+        self.target_noise_scale = nn.Parameter(
+            torch.tensor(
+                self.config.generator_initial_target_noise_scale,
+                dtype=torch.float32,
+            )
+        )
+        self.max_target_noise_scale = float(self.config.generator_max_target_noise_scale)
         self.future_shift_scale = nn.Parameter(
             torch.tensor(
                 self.config.generator_initial_future_shift_scale,
@@ -80,6 +87,7 @@ class GeneratorModel(nn.Module):
             * self.config.generator_future_shift_coeff_init_std
         )
         self._last_residual: torch.Tensor | None = None
+        self._last_target_noise: torch.Tensor | None = None
         self._last_y: torch.Tensor | None = None
 
         self._init_residual_as_noop()
@@ -115,14 +123,15 @@ class GeneratorModel(nn.Module):
 
         _, seq_len, _ = X_seq.shape
         hours = torch.arange(seq_len, device=X_seq.device) % self.config.hours_per_week()
-        X_model = self._standardize_sequence_features(X_seq)
 
-        base = self._linear_backbone(X_model, hours)
-        residual = self._neural_residual(X_model, hours)
-        future_shift = self._future_shift(X_model)
-        y = base + residual + future_shift
+        base = self._linear_backbone(X_seq, hours)
+        residual = self._neural_residual(X_seq, hours)
+        future_shift = self._future_shift(X_seq)
+        target_noise = self._target_noise(base)
+        y = base + residual + future_shift + target_noise
 
         self._last_residual = residual
+        self._last_target_noise = target_noise
         self._last_y = y
         return y.squeeze(0) if squeeze_batch else y
 
@@ -140,12 +149,12 @@ class GeneratorModel(nn.Module):
 
         x_seq = x_features.view(1, 1, -1)
         hours = torch.tensor([hour], device=x_features.device)
-        x_model = self._standardize_sequence_features(x_seq)
         y = (
-            self._linear_backbone(x_model, hours)
-            + self._neural_residual(x_model, hours)
-            + self._future_shift(x_model)
+            self._linear_backbone(x_seq, hours)
+            + self._neural_residual(x_seq, hours)
+            + self._future_shift(x_seq)
         )
+        y = y + self._target_noise(y)
         return y.squeeze()
 
     def _normalize_hour_idx(self, hour_idx: int | torch.Tensor) -> int:
@@ -165,6 +174,7 @@ class GeneratorModel(nn.Module):
                 self.config.generator_clamp_max,
             )
             self.residual_scale.clamp_(0.0, self.max_residual)
+            self.target_noise_scale.clamp_(0.0, self.max_target_noise_scale)
             self.future_shift_scale.clamp_(
                 -self.config.generator_max_residual,
                 self.config.generator_max_residual,
@@ -184,6 +194,7 @@ class GeneratorModel(nn.Module):
             smoothness = residual.new_tensor(0.0)
 
         scale_penalty = self.residual_scale.pow(2)
+        target_noise_penalty = self.target_noise_scale.pow(2)
         future_shift_penalty = self.future_shift_scale.pow(2)
         if self._last_y is not None and self._last_y.numel() > 1:
             y_std = self._last_y.std(unbiased=False)
@@ -202,6 +213,7 @@ class GeneratorModel(nn.Module):
             + 0.5 * smoothness
             + 0.1 * centered
             + 0.01 * scale_penalty
+            + self.config.generator_target_noise_penalty_weight * target_noise_penalty
             + 0.01 * future_shift_penalty
             + self.config.generator_scale_weight * y_scale
             + self.config.generator_drift_weight * drift
@@ -286,15 +298,6 @@ class GeneratorModel(nn.Module):
         y_var = y.var(unbiased=False).clamp_min(1e-3)
         return second_diff.pow(2).mean() / y_var
 
-    @staticmethod
-    def _standardize_sequence_features(X_seq: torch.Tensor) -> torch.Tensor:
-        if X_seq.shape[1] <= 1:
-            return X_seq
-
-        mean = X_seq.mean(dim=(0, 1), keepdim=True)
-        std = X_seq.std(dim=(0, 1), keepdim=True, unbiased=False).clamp_min(1e-3)
-        return torch.clamp((X_seq - mean) / std, -5.0, 5.0)
-
     def _neural_residual(self, X_seq: torch.Tensor, hours: torch.Tensor) -> torch.Tensor:
         hour_context = self._hour_context(hours).unsqueeze(0).expand(X_seq.shape[0], -1, -1)
         residual_input = torch.cat([X_seq, hour_context], dim=-1)
@@ -328,6 +331,14 @@ class GeneratorModel(nn.Module):
             self.max_residual,
         )
         return self.config.generator_future_shift_weight * scale * future_gate * raw_shift
+
+    def _target_noise(self, reference: torch.Tensor) -> torch.Tensor:
+        scale = torch.clamp(
+            self.target_noise_scale,
+            0.0,
+            self.max_target_noise_scale,
+        )
+        return torch.randn_like(reference) * scale
 
     def _hour_context(self, hours: torch.Tensor) -> torch.Tensor:
         hours = hours.to(dtype=torch.float32)

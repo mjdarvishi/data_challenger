@@ -168,6 +168,11 @@ class PipelineTracker:
                 self._safe(gen_model.residual_scale).numpy().item()
             )
 
+        if hasattr(gen_model, "target_noise_scale"):
+            params["target_noise_scale"] = float(
+                self._safe(gen_model.target_noise_scale).numpy().item()
+            )
+
         if hasattr(gen_model, "future_shift_scale"):
             params["future_shift_scale"] = float(
                 self._safe(gen_model.future_shift_scale).numpy().item()

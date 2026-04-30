@@ -51,6 +51,9 @@ class Config:
     generator_scale_weight = 0.0
     generator_initial_residual_scale = 1.0
     generator_max_residual = 20.0
+    generator_initial_target_noise_scale = 0.2
+    generator_max_target_noise_scale = 5.0
+    generator_target_noise_penalty_weight = 0.001
     generator_drift_weight = 0.0
     generator_coeff_smoothness_weight = 0.0
     generator_y_smoothness_weight = 0.0
@@ -76,8 +79,8 @@ class Config:
     @staticmethod
     def set_input_dim( features: list[XFeature]):
         num_features = len(features)
-        # Layout after SequenceBuilder: [hour_idx, x1..xN, historical_y]
-        Config.input_dim = 2 + num_features
+        # Layout after SequenceBuilder: [hour_idx, x1..xN]
+        Config.input_dim = 1 + num_features
 
 
     noise_std: float = 2
@@ -128,6 +131,9 @@ class Config:
             "generator_scale_weight": Config.generator_scale_weight,
             "generator_initial_residual_scale": Config.generator_initial_residual_scale,
             "generator_max_residual": Config.generator_max_residual,
+            "generator_initial_target_noise_scale": Config.generator_initial_target_noise_scale,
+            "generator_max_target_noise_scale": Config.generator_max_target_noise_scale,
+            "generator_target_noise_penalty_weight": Config.generator_target_noise_penalty_weight,
             "generator_drift_weight": Config.generator_drift_weight,
             "generator_coeff_smoothness_weight": Config.generator_coeff_smoothness_weight,
             "generator_y_smoothness_weight": Config.generator_y_smoothness_weight,
